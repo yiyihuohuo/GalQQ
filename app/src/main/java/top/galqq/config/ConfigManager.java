@@ -50,6 +50,10 @@ public class ConfigManager {
     // Context Default Values
     public static final boolean DEFAULT_CONTEXT_ENABLED = true;
     public static final int DEFAULT_CONTEXT_MESSAGE_COUNT = 10;
+    
+    // QPS Default Value
+    public static final float DEFAULT_AI_QPS = 3.0f;
+    public static final String KEY_AI_QPS = "gal_ai_qps";
 
     /**
      * Initialize MMKV with MULTI_PROCESS_MODE for cross-process access
@@ -176,6 +180,14 @@ public class ConfigManager {
     
     public static void setAiMaxTokens(int maxTokens) {
         getMmkv().encode(KEY_AI_MAX_TOKENS, maxTokens);
+    }
+
+    public static float getAiQps() {
+        return getMmkv().decodeFloat(KEY_AI_QPS, DEFAULT_AI_QPS);
+    }
+    
+    public static void setAiQps(float qps) {
+        getMmkv().encode(KEY_AI_QPS, qps);
     }
 
     public static String getDictPath() {

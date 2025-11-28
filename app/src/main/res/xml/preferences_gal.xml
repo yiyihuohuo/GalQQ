@@ -63,6 +63,13 @@
             android:summary="@string/gal_ai_max_tokens_summary"
             android:inputType="number"
             android:defaultValue="120" />
+            
+        <EditTextPreference
+            android:key="gal_ai_qps"
+            android:title="请求速率 (QPS)"
+            android:summary="每秒最大请求数 (默认: 3.0)，当遇到发送太多的错误时会自动降低"
+            android:inputType="numberDecimal"
+            android:defaultValue="3.0" />
         
         <Preference
             android:key="gal_test_api"
@@ -80,6 +87,11 @@
             android:key="gal_ai_log"
             android:title="@string/gal_ai_log_title"
             android:summary="@string/gal_ai_log_summary" />
+            
+        <Preference
+            android:key="gal_ai_monitor"
+            android:title="当前请求监控"
+            android:summary="查看当前队列状态、QPS和正在处理的请求" />
         
         <SwitchPreference
             android:key="context_enabled"
@@ -127,9 +139,24 @@
 
     <PreferenceCategory android:title="@string/gal_about_cat_title">
         <Preference
-            android:key="gal_contact"
-            android:title="@string/gal_contact_title"
-            android:summary="@string/gal_contact_summary" />
+            android:key="gal_source"
+            android:title="开源地址"
+            android:summary="https://github.com/yiyihuohuo/GalQQ" />
+        
+        <Preference
+            android:key="gal_join_group"
+            android:title="加入交流群"
+            android:summary="点击加入" />
+            
+        <Preference
+            android:key="gal_version"
+            android:title="版本号"
+            android:summary="1.0.0 Alpha" />
+            
+        <Preference
+            android:key="gal_developer"
+            android:title="开发者"
+            android:summary="Huo" />
     </PreferenceCategory>
 
 </PreferenceScreen>

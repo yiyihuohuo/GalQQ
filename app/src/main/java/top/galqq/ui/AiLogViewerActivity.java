@@ -4,10 +4,16 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.annotation.NonNull;
 import androidx.core.content.FileProvider;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import top.galqq.R;
 import top.galqq.utils.AiLogManager;
 
@@ -16,7 +22,9 @@ import top.galqq.utils.HostInfo;
 import java.io.File;
 import java.io.FileWriter;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -24,7 +32,8 @@ import java.util.Locale;
  */
 public class AiLogViewerActivity extends AppCompatTransferActivity {
     
-    private TextView logContent;
+    private RecyclerView logRecyclerView;
+    private LogAdapter logAdapter;
     private Button btnExport;
     private Button btnClear;
     
@@ -43,9 +52,18 @@ public class AiLogViewerActivity extends AppCompatTransferActivity {
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         }
         
-        logContent = findViewById(R.id.log_content);
+        logRecyclerView = findViewById(R.id.log_recycler_view);
         btnExport = findViewById(R.id.btn_export);
         btnClear = findViewById(R.id.btn_clear);
+        View fastScroller = findViewById(R.id.fast_scroller);
+        
+        // 设置RecyclerView
+        logRecyclerView.setLayoutManager(new LinearLayoutManager(this));
+        logAdapter = new LogAdapter();
+        logRecyclerView.setAdapter(logAdapter);
+        
+        // 设置快速滚动条
+        setupFastScroller(fastScroller);
         
         // 导出按钮
         btnExport.setOnClickListener(v -> exportLogs());
@@ -61,6 +79,69 @@ public class AiLogViewerActivity extends AppCompatTransferActivity {
         loadLogs();
     }
     
+    private void setupFastScroller(View fastScroller) {
+        fastScroller.setOnTouchListener((v, event) -> {
+            int action = event.getAction();
+            if (action == android.view.MotionEvent.ACTION_DOWN || 
+                action == android.view.MotionEvent.ACTION_MOVE) {
+                
+                // 获取触摸点相对于RecyclerView的Y坐标
+                int[] recyclerLocation = new int[2];
+                logRecyclerView.getLocationOnScreen(recyclerLocation);
+                
+                int[] scrollerLocation = new int[2];
+                v.getLocationOnScreen(scrollerLocation);
+                
+                float touchY = event.getRawY() - recyclerLocation[1];
+                float recyclerHeight = logRecyclerView.getHeight();
+                
+                // 计算滚动位置百分比
+                float percentage = touchY / recyclerHeight;
+                percentage = Math.max(0f, Math.min(1f, percentage));
+                
+                // 计算目标位置
+                int itemCount = logAdapter.getItemCount();
+                int targetPosition = (int) (percentage * itemCount);
+                targetPosition = Math.max(0, Math.min(itemCount - 1, targetPosition));
+                
+                // 滚动到目标位置
+                logRecyclerView.scrollToPosition(targetPosition);
+                
+                // 更新scroller位置
+                float scrollerY = percentage * (recyclerHeight - v.getHeight());
+                v.setY(scrollerY);
+                
+                return true;
+            }
+            return false;
+        });
+        
+        // 监听RecyclerView滚动，同步更新scroller位置
+        logRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                super.onScrolled(recyclerView, dx, dy);
+                updateScrollerPosition(fastScroller);
+            }
+        });
+    }
+    
+    private void updateScrollerPosition(View fastScroller) {
+        LinearLayoutManager layoutManager = (LinearLayoutManager) logRecyclerView.getLayoutManager();
+        if (layoutManager == null) return;
+        
+        int firstVisiblePosition = layoutManager.findFirstVisibleItemPosition();
+        int itemCount = logAdapter.getItemCount();
+        
+        if (itemCount == 0) return;
+        
+        float percentage = (float) firstVisiblePosition / itemCount;
+        float recyclerHeight = logRecyclerView.getHeight();
+        float scrollerY = percentage * (recyclerHeight - fastScroller.getHeight());
+        
+        fastScroller.setY(scrollerY);
+    }
+    
     @Override
     public boolean onSupportNavigateUp() {
         finish();
@@ -69,7 +150,20 @@ public class AiLogViewerActivity extends AppCompatTransferActivity {
     
     private void loadLogs() {
         String logs = AiLogManager.getLogs(this);
-        logContent.setText(logs);
+        // 按行分割日志
+        String[] lines = logs.split("\n");
+        List<String> logLines = new ArrayList<>();
+        for (String line : lines) {
+            if (!line.trim().isEmpty()) {
+                logLines.add(line);
+            }
+        }
+        logAdapter.setLogLines(logLines);
+        
+        // 滚动到底部显示最新日志
+        if (logLines.size() > 0) {
+            logRecyclerView.scrollToPosition(logLines.size() - 1);
+        }
     }
     
     private void exportLogs() {
@@ -104,6 +198,54 @@ public class AiLogViewerActivity extends AppCompatTransferActivity {
             
         } catch (Exception e) {
             Toast.makeText(this, "导出失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    /**
+     * RecyclerView适配器，用于显示日志行
+     */
+    private static class LogAdapter extends RecyclerView.Adapter<LogAdapter.LogViewHolder> {
+        
+        private List<String> logLines = new ArrayList<>();
+        
+        public void setLogLines(List<String> lines) {
+            this.logLines = lines;
+            notifyDataSetChanged();
+        }
+        
+        @NonNull
+        @Override
+        public LogViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            TextView textView = new TextView(parent.getContext());
+            textView.setLayoutParams(new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ));
+            textView.setTextColor(0xFF333333);
+            textView.setTextSize(12);
+            textView.setTypeface(android.graphics.Typeface.MONOSPACE);
+            textView.setTextIsSelectable(true);
+            textView.setPadding(0, 4, 0, 4);
+            return new LogViewHolder(textView);
+        }
+        
+        @Override
+        public void onBindViewHolder(@NonNull LogViewHolder holder, int position) {
+            holder.textView.setText(logLines.get(position));
+        }
+        
+        @Override
+        public int getItemCount() {
+            return logLines.size();
+        }
+        
+        static class LogViewHolder extends RecyclerView.ViewHolder {
+            TextView textView;
+            
+            LogViewHolder(TextView itemView) {
+                super(itemView);
+                this.textView = itemView;
+            }
         }
     }
 }

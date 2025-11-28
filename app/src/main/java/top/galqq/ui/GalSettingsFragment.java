@@ -148,6 +148,23 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
             });
         }
         
+        // AI QPS
+        EditTextPreference aiQpsPref = findPreference(ConfigManager.KEY_AI_QPS);
+        if (aiQpsPref != null) {
+            aiQpsPref.setText(String.valueOf(ConfigManager.getAiQps()));
+            aiQpsPref.setOnPreferenceChangeListener((preference, newValue) -> {
+                try {
+                    float qps = Float.parseFloat((String) newValue);
+                    if (qps > 0.1) {
+                        ConfigManager.setAiQps(qps);
+                        aiQpsPref.setText((String) newValue);
+                        return true;
+                    }
+                } catch (Exception e) {}
+                return false;
+            });
+        }
+        
         // Test API Button
         Preference testApiPref = findPreference("gal_test_api");
         if (testApiPref != null) {
@@ -156,16 +173,22 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
                 top.galqq.utils.HttpAiClient.testApiConnection(requireContext(), new top.galqq.utils.HttpAiClient.AiCallback() {
                     @Override
                     public void onSuccess(java.util.List<String> options) {
-                        requireActivity().runOnUiThread(() -> {
-                            android.widget.Toast.makeText(requireContext(), "✅ API连接成功！", android.widget.Toast.LENGTH_LONG).show();
-                        });
+                        android.app.Activity activity = getActivity();
+                        if (activity != null && isAdded()) {
+                            activity.runOnUiThread(() -> {
+                                android.widget.Toast.makeText(activity, "✅ API连接成功！", android.widget.Toast.LENGTH_LONG).show();
+                            });
+                        }
                     }
 
                     @Override
                     public void onFailure(Exception e) {
-                        requireActivity().runOnUiThread(() -> {
-                            android.widget.Toast.makeText(requireContext(), "❌ API连接失败: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
-                        });
+                        android.app.Activity activity = getActivity();
+                        if (activity != null && isAdded()) {
+                            activity.runOnUiThread(() -> {
+                                android.widget.Toast.makeText(activity, "❌ API连接失败: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+                            });
+                        }
                     }
                 });
                 return true;
@@ -218,6 +241,40 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
             aiLogPref.setOnPreferenceClickListener(preference -> {
                 Intent intent = new Intent(requireContext(), AiLogViewerActivity.class);
                 startActivity(intent);
+                return true;
+            });
+        }
+        
+        // AI Monitor
+        Preference aiMonitorPref = findPreference("gal_ai_monitor");
+        if (aiMonitorPref != null) {
+            aiMonitorPref.setOnPreferenceClickListener(preference -> {
+                Intent intent = new Intent(requireContext(), AiMonitorActivity.class);
+                startActivity(intent);
+                return true;
+            });
+        }
+        
+        // Open Source Address
+        Preference sourcePref = findPreference("gal_source");
+        if (sourcePref != null) {
+            sourcePref.setOnPreferenceClickListener(preference -> {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/yiyihuohuo/GalQQ"));
+                    startActivity(intent);
+                } catch (Exception e) {
+                    android.widget.Toast.makeText(requireContext(), "无法打开浏览器", android.widget.Toast.LENGTH_SHORT).show();
+                }
+                return true;
+            });
+        }
+
+        // Join Group
+        Preference joinGroupPref = findPreference("gal_join_group");
+        if (joinGroupPref != null) {
+            joinGroupPref.setOnPreferenceClickListener(preference -> {
+                android.widget.Toast.makeText(requireContext(), "暂未开放加群", android.widget.Toast.LENGTH_SHORT).show();
+                // TODO: Implement join group logic
                 return true;
             });
         }

@@ -38,5 +38,11 @@
             android:label="@string/ai_log_title"
             android:exported="false"
             android:theme="@style/Theme.AppCompat.DayNight" />
+            
+        <activity
+            android:name=".ui.AiMonitorActivity"
+            android:label="AI Monitor"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.DayNight" />
     </application>
 </manifest>

@@ -12,11 +12,14 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import de.robv.android.xposed.XposedBridge;
+import top.galqq.config.ConfigManager;
 import top.galqq.hook.MessageInterceptor;
 
 /**
@@ -45,6 +48,12 @@ public class AiRateLimitedQueue {
     // 持久化管理器
     private final RequestPersistence persistence;
     
+    // 异步执行线程池
+    private final ExecutorService executorService;
+    
+    // 当前正在处理的请求描述（用于监控）
+    private final List<String> activeRequests = java.util.Collections.synchronizedList(new ArrayList<>());
+    
     // 工作线程
     private Thread workerThread;
     
@@ -55,11 +64,15 @@ public class AiRateLimitedQueue {
         // 初始化优先级队列（容量100）
         this.requestQueue = new PriorityBlockingQueue<>(100);
         
-        // 初始化动态限流器（初始3 QPS）
-        this.rateLimiter = new DynamicRateLimiter(3.0, 0.5);
+        // 初始化动态限流器（使用配置的QPS，默认3.0）
+        float initialQps = ConfigManager.getAiQps();
+        this.rateLimiter = new DynamicRateLimiter(initialQps, 0.5);
         
         // 初始化持久化管理器
         this.persistence = new RequestPersistence(context);
+        
+        // 初始化线程池（用于并发执行请求，避免阻塞队列）
+        this.executorService = Executors.newCachedThreadPool();
         
         this.mainHandler = new Handler(Looper.getMainLooper());
         
@@ -69,7 +82,7 @@ public class AiRateLimitedQueue {
         // 启动工作线程
         startWorker();
         
-        XposedBridge.log(TAG + ": 初始化完成，初始QPS=3.0");
+        XposedBridge.log(TAG + ": 初始化完成，初始QPS=" + initialQps);
     }
     
     public static AiRateLimitedQueue getInstance(Context context) {
@@ -95,7 +108,7 @@ public class AiRateLimitedQueue {
         
         boolean added = requestQueue.offer(request);
         if (added) {
-            XposedBridge.log(TAG + ": 请求入队 [" + priority + "] 队列大小=" + requestQueue.size());
+            // XposedBridge.log(TAG + ": 请求入队 [" + priority + "] 队列大小=" + requestQueue.size());
             // 只有HIGH优先级且有msgId的任务才持久化，避免IO过于频繁
             if (priority == Priority.HIGH && msgId != null) {
                 persistence.saveQueueAsync(requestQueue);
@@ -134,13 +147,25 @@ public class AiRateLimitedQueue {
                     // 限流：等待直到可以发送
                     rateLimiter.acquire();
                     
-                    // 处理请求（带重试）
-                    processRequest(request);
-                    
-                    // 处理完后更新持久化（移除已完成的）
-                    if (request.priority == Priority.HIGH && request.msgId != null) {
-                        persistence.saveQueueAsync(requestQueue);
-                    }
+                    // 异步提交到线程池执行，不阻塞工作线程
+                    executorService.submit(() -> {
+                        String reqInfo = "[" + request.priority + "] " + 
+                                       (request.msgContent.length() > 10 ? request.msgContent.substring(0, 10) + "..." : request.msgContent);
+                        activeRequests.add(reqInfo);
+                        try {
+                            // 处理请求（带重试）
+                            processRequest(request);
+                            
+                            // 处理完后更新持久化（移除已完成的）
+                            if (request.priority == Priority.HIGH && request.msgId != null) {
+                                persistence.saveQueueAsync(requestQueue);
+                            }
+                        } catch (Throwable t) {
+                            XposedBridge.log(TAG + ": 异步任务执行异常: " + t.getMessage());
+                        } finally {
+                            activeRequests.remove(reqInfo);
+                        }
+                    });
                     
                 } catch (InterruptedException e) {
                     XposedBridge.log(TAG + ": 工作线程被中断");
@@ -166,8 +191,8 @@ public class AiRateLimitedQueue {
         
         while (attempt <= MAX_RETRIES) {
             try {
-                XposedBridge.log(TAG + ": 处理请求 [" + request.priority + "] " +
-                               "(尝试 " + (attempt + 1) + "/" + (MAX_RETRIES + 1) + ")");
+                // XposedBridge.log(TAG + ": 处理请求 [" + request.priority + "] " +
+                //                "(尝试 " + (attempt + 1) + "/" + (MAX_RETRIES + 1) + ")");
                 
                 // 调用AI接口（同步）
                 final List<String> options = fetchOptionsSync(request);
@@ -178,7 +203,7 @@ public class AiRateLimitedQueue {
                 // 回调成功（切换到UI线程）
                 mainHandler.post(() -> request.callback.onSuccess(options));
                 
-                XposedBridge.log(TAG + ": ✅ 请求成功");
+                // XposedBridge.log(TAG + ": ✅ 请求成功");
                 return;
                 
             } catch (RateLimitException e) {
@@ -270,6 +295,27 @@ public class AiRateLimitedQueue {
      */
     public double getCurrentQPS() {
         return rateLimiter.getCurrentQPS();
+    }
+    
+    /**
+     * 获取当前正在处理的请求列表
+     */
+    public List<String> getActiveRequests() {
+        return new ArrayList<>(activeRequests);
+    }
+    
+    /**
+     * 获取线程池状态信息
+     */
+    public String getThreadPoolInfo() {
+        if (executorService instanceof java.util.concurrent.ThreadPoolExecutor) {
+            java.util.concurrent.ThreadPoolExecutor pool = (java.util.concurrent.ThreadPoolExecutor) executorService;
+            return "Active: " + pool.getActiveCount() + 
+                   ", Pool: " + pool.getPoolSize() + 
+                   ", Core: " + pool.getCorePoolSize() + 
+                   ", Max: " + pool.getMaximumPoolSize();
+        }
+        return "Unknown Executor Type";
     }
     
     // ========== 内部类 ==========
@@ -380,24 +426,45 @@ public class AiRateLimitedQueue {
     /**
      * 动态QPS限流器
      */
+    /**
+     * 动态QPS限流器
+     */
     private static class DynamicRateLimiter {
         private volatile double currentQPS;        // 当前QPS
-        private final double initialQPS;           // 初始QPS
+        private volatile double targetQPS;         // 目标QPS（配置值）
         private final double minQPS;               // 最小QPS
         private final AtomicInteger successCount = new AtomicInteger(0);
         private volatile long lastAdjustTime = System.currentTimeMillis();
         private volatile long lastTokenTime = System.currentTimeMillis();
         
         DynamicRateLimiter(double initialQPS, double minQPS) {
-            this.initialQPS = initialQPS;
+            this.targetQPS = initialQPS;
             this.minQPS = minQPS;
             this.currentQPS = initialQPS;
+        }
+        
+        /**
+         * 更新目标QPS
+         */
+        void updateTargetQps(double newQps) {
+            if (Math.abs(this.targetQPS - newQps) > 0.1) {
+                XposedBridge.log(TAG + ": 更新目标QPS: " + this.targetQPS + " -> " + newQps);
+                this.targetQPS = newQps;
+                // 如果当前QPS高于新目标，立即降低
+                if (this.currentQPS > newQps) {
+                    this.currentQPS = newQps;
+                }
+            }
         }
         
         /**
          * 获取令牌（阻塞直到可用）
          */
         synchronized void acquire() {
+            // 每次获取令牌前，检查配置是否有更新（MMKV读取很快）
+            float configQps = ConfigManager.getAiQps();
+            updateTargetQps(configQps);
+            
             long intervalMs = (long) (1000.0 / currentQPS);
             long now = System.currentTimeMillis();
             long waitTime = lastTokenTime + intervalMs - now;
@@ -434,10 +501,11 @@ public class AiRateLimitedQueue {
             long now = System.currentTimeMillis();
             
             // 每30秒最多恢复一次，且需要连续成功10次
-            if (now - lastAdjustTime > 30000 && count >= 10 && currentQPS < initialQPS) {
+            if (now - lastAdjustTime > 30000 && count >= 10 && currentQPS < targetQPS) {
                 synchronized (this) {
                     double oldQPS = currentQPS;
-                    currentQPS = Math.min(initialQPS, currentQPS * 1.2);
+                    // 恢复时不超过目标QPS
+                    currentQPS = Math.min(targetQPS, currentQPS * 1.2);
                     successCount.set(0);
                     lastAdjustTime = now;
                     

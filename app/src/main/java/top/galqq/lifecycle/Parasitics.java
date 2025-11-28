@@ -95,6 +95,27 @@ public class Parasitics {
             return;
         }
         try {
+            // 检查路径有效性
+            boolean needRefresh = sModulePath == null;
+            if (!needRefresh) {
+                File moduleFile = new File(sModulePath);
+                if (!moduleFile.exists() || !moduleFile.canRead()) {
+                    XposedBridge.log(TAG + ": sModulePath is invalid or unreadable: " + sModulePath);
+                    needRefresh = true;
+                }
+            }
+
+            // 尝试动态获取模块路径（解决ENOENT问题）
+            if (needRefresh) {
+                try {
+                    Context moduleContext = ctx.createPackageContext("top.galqq", Context.CONTEXT_IGNORE_SECURITY);
+                    sModulePath = moduleContext.getApplicationInfo().sourceDir;
+                    XposedBridge.log(TAG + ": Resolved module path via createPackageContext: " + sModulePath);
+                } catch (Exception e) {
+                    XposedBridge.log(TAG + ": Failed to resolve module path: " + e.getMessage());
+                }
+            }
+
             Class<?> clazz_ActivityThread = Class.forName("android.app.ActivityThread");
             Method currentActivityThread = clazz_ActivityThread.getDeclaredMethod("currentActivityThread");
             currentActivityThread.setAccessible(true);

@@ -158,6 +158,63 @@ public class MessageSendTracker {
                                 }
                             }
                             XposedBridge.log(TAG + ": ═══════════════════════════════════");
+                            
+                            // 【提取发送的消息并添加到上下文】
+                            try {
+                                // 从元素列表中提取文本内容
+                                java.util.List<?> elementsList = (java.util.List<?>) param.args[0];
+                                if (elementsList != null && !elementsList.isEmpty()) {
+                                    StringBuilder messageText = new StringBuilder();
+                                    
+                                    for (Object element : elementsList) {
+                                        try {
+                                            // 获取TextElement (字段名可能是c或h)
+                                            Object textElement = null;
+                                            try {
+                                                textElement = XposedHelpers.getObjectField(element, "c");
+                                            } catch (Throwable ignored) {}
+                                            
+                                            if (textElement != null) {
+                                                // 提取content字段
+                                                try {
+                                                    Object contentObj = XposedHelpers.getObjectField(textElement, "content");
+                                                    if (contentObj != null) {
+                                                        String content = String.valueOf(contentObj);
+                                                        if (!content.trim().isEmpty()) {
+                                                            messageText.append(content);
+                                                        }
+                                                    }
+                                                } catch (Throwable ignored) {}
+                                            }
+                                        } catch (Throwable ignored) {}
+                                    }
+                                    
+                                    String finalText = messageText.toString().trim();
+                                    
+                                    // 获取peerUin
+                                    String peerUin = null;
+                                    try {
+                                        if (param.args.length > 2 && param.args[2] != null) {
+                                            peerUin = String.valueOf(param.args[2]);
+                                        }
+                                    } catch (Throwable ignored) {}
+                                    
+                                    // 添加到上下文
+                                    if (peerUin != null && !finalText.isEmpty()) {
+                                        MessageContextManager.addMessage(
+                                            peerUin,
+                                            "我",
+                                            finalText,
+                                            true,  // isSelf = true
+                                            null,
+                                            System.currentTimeMillis()
+                                        );
+                                        XposedBridge.log(TAG + ": ✓ 已将发送的消息添加到上下文: [" + peerUin + "] " + finalText);
+                                    }
+                                }
+                            } catch (Throwable t) {
+                                XposedBridge.log(TAG + ": 提取发送消息失败: " + t.getMessage());
+                            }
                         }
                     });
                     XposedBridge.log(TAG + ": Hook " + methodName + " 成功");

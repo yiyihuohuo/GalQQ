@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#F5F7FA"
+    android:padding="16dp">
+
+    <!-- Header -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="AI 监控面板"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:textColor="#333333"
+        android:paddingBottom="24dp"/>
+
+    <!-- Stats Grid -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:baselineAligned="false"
+        android:paddingBottom="24dp">
+
+        <!-- Queue Size -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:background="@drawable/bg_rounded_card"
+            android:padding="16dp"
+            android:gravity="center"
+            android:elevation="0dp">
+            
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="等待队列"
+                android:textSize="13sp"
+                android:textColor="#888888"/>
+            
+            <TextView
+                android:id="@+id/tv_queue_size"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:textColor="#2196F3"
+                android:paddingTop="8dp"/>
+        </LinearLayout>
+
+        <View android:layout_width="12dp" android:layout_height="1dp"/>
+
+        <!-- QPS -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:background="@drawable/bg_rounded_card"
+            android:padding="16dp"
+            android:gravity="center"
+            android:elevation="0dp">
+            
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="当前 QPS"
+                android:textSize="13sp"
+                android:textColor="#888888"/>
+            
+            <TextView
+                android:id="@+id/tv_qps"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0.00"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:textColor="#4CAF50"
+                android:paddingTop="8dp"/>
+        </LinearLayout>
+        
+        <View android:layout_width="12dp" android:layout_height="1dp"/>
+
+        <!-- Thread Pool -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:background="@drawable/bg_rounded_card"
+            android:padding="16dp"
+            android:gravity="center"
+            android:elevation="0dp">
+            
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="活跃线程"
+                android:textSize="13sp"
+                android:textColor="#888888"/>
+            
+            <TextView
+                android:id="@+id/tv_threads"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0/0"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:textColor="#FF9800"
+                android:paddingTop="8dp"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Active Requests Header -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="正在处理的请求"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="#333333"
+        android:paddingBottom="12dp"/>
+
+    <!-- Active Requests List -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_rounded_card"
+        android:padding="16dp"
+        android:elevation="0dp">
+
+        <TextView
+            android:id="@+id/tv_active_requests"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="暂无活动请求"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:lineSpacingExtra="8dp"
+            android:fontFamily="sans-serif"/>
+    </ScrollView>
+
+</LinearLayout>

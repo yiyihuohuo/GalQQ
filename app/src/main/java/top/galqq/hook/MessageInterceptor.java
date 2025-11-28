@@ -499,6 +499,74 @@ public class MessageInterceptor {
             Context context = rootView.getContext();
             ConfigManager.init(context);
             
+            // 【方法1】识别 Activity/Context 类型
+            try {
+                String activityName = "unknown";
+                if (context instanceof Activity) {
+                    activityName = context.getClass().getName();
+                } else {
+                    // 尝试解包 ContextWrapper
+                    Context currentCtx = context;
+                    while (currentCtx instanceof android.content.ContextWrapper) {
+                        if (currentCtx instanceof Activity) {
+                            activityName = currentCtx.getClass().getName();
+                            break;
+                        }
+                        currentCtx = ((android.content.ContextWrapper) currentCtx).getBaseContext();
+                    }
+                }
+                // XposedBridge.log(TAG + ": [Context] Activity/Context: " + activityName);
+                
+                // 【转发消息过滤】如果是转发消息详情页，则不显示AI选项条
+                if (activityName != null && activityName.contains("MultiForwardActivity")) {
+                    XposedBridge.log(TAG + ": ⚠️ Skipping forwarded message in MultiForwardActivity");
+                    return;
+                }
+            } catch (Throwable t) {
+                // XposedBridge.log(TAG + ": [Context] Error getting activity: " + t.getMessage());
+            }
+            
+            // 【方法2】识别 ViewHolder 类型
+            try {
+                String viewHolderName = aioBubbleMsgItemVB.getClass().getName();
+                // XposedBridge.log(TAG + ": [ViewHolder] Type: " + viewHolderName);
+            } catch (Throwable t) {
+                // XposedBridge.log(TAG + ": [ViewHolder] Error: " + t.getMessage());
+            }
+            
+            // 【方法3】识别 RecyclerView 的 Adapter 类型 (使用反射)
+            try {
+                android.view.ViewParent parent = rootView.getParent();
+                boolean foundRecyclerView = false;
+                while (parent != null) {
+                    Class<?> parentClass = parent.getClass();
+                    // 检查是否是 RecyclerView (通过类名判断，避免依赖)
+                    if (isRecyclerView(parentClass)) {
+                        foundRecyclerView = true;
+                        // 反射调用 getAdapter
+                        try {
+                            Method getAdapterMethod = parentClass.getMethod("getAdapter");
+                            Object adapter = getAdapterMethod.invoke(parent);
+                            if (adapter != null) {
+                                // XposedBridge.log(TAG + ": [Adapter] Type: " + adapter.getClass().getName());
+                            } else {
+                                // XposedBridge.log(TAG + ": [Adapter] Adapter is null");
+                            }
+                        } catch (NoSuchMethodException e) {
+                            // 可能是混淆后的名字，或者不是标准的RecyclerView
+                            // XposedBridge.log(TAG + ": [Adapter] getAdapter method not found on " + parentClass.getName());
+                        }
+                        break;
+                    }
+                    parent = parent.getParent();
+                }
+                if (!foundRecyclerView) {
+                    // XposedBridge.log(TAG + ": [Adapter] RecyclerView not found in parent hierarchy");
+                }
+            } catch (Throwable t) {
+                XposedBridge.log(TAG + ": [Adapter] Error: " + t.getMessage());
+            }
+            
             // Check if module is enabled
             if (!ConfigManager.isModuleEnabled()) {
                 return; // Module is disabled, don't show option bar
@@ -510,6 +578,28 @@ public class MessageInterceptor {
 
             // Filter out unwanted message types
             int msgType = XposedHelpers.getIntField(msgRecord, "msgType");
+            
+            // 【调试日志】打印消息类型相关字段，用于识别转发聊天记录
+            try {
+                int subMsgType = XposedHelpers.getIntField(msgRecord, "subMsgType");
+                
+                XposedBridge.log(TAG + ": ===== Message Type Analysis =====");
+                XposedBridge.log(TAG + ": msgType=" + msgType + ", subMsgType=" + subMsgType);
+                XposedBridge.log(TAG + ": sendType=" + sendType);
+                
+                // 【过滤转发聊天记录容器】msgType=11且subMsgType=7是转发聊天记录的容器消息
+                // 不过滤容器内的具体Text消息（msgType=2），因为它们的字段与普通消息相同
+                if (msgType == 11 && subMsgType == 7) {
+                    XposedBridge.log(TAG + ": ⚠️ FORWARDED CHAT RECORD CONTAINER - SKIPPING!");
+                    XposedBridge.log(TAG + ": ================================");
+                    return; // 跳过转发聊天记录容器
+                }
+                
+                XposedBridge.log(TAG + ": ================================");
+            } catch (Throwable t) {
+                XposedBridge.log(TAG + ": Error detecting forwarded message: " + t.getMessage());
+            }
+            
             // 5 = Gray Tips (Revoke), 3 = File, 7 = Video
             if (msgType == 5 || msgType == 3 || msgType == 7) {
                 return;
@@ -564,6 +654,7 @@ public class MessageInterceptor {
             }
             
             // 保存消息到上下文缓存（带去重）
+            String peerUin = null; // 提升作用域
             try {
                 // 获取发送人昵称（优先使用备注名，其次QQ昵称）
                 String senderName = null;
@@ -589,8 +680,17 @@ public class MessageInterceptor {
                     senderName = senderUin != null ? senderUin : "未知";
                 }
                 
-                // 使用senderUin作为conversationId，传递msgId用于去重
-                if (senderUin != null && !msgContent.isEmpty()) {
+                // 获取peerUin（会话ID）
+                try {
+                    Object peerUinObj = XposedHelpers.getObjectField(msgRecord, "peerUin");
+                    peerUin = String.valueOf(peerUinObj);
+                } catch (Throwable t) {
+                    XposedBridge.log(TAG + ": Failed to get peerUin: " + t.getMessage());
+                }
+
+                // 使用peerUin作为conversationId（群聊时为群号，私聊时为对方QQ）
+                // 这样可以确保群聊中不同用户的消息被聚合到同一个上下文中
+                if (peerUin != null && !msgContent.isEmpty()) {
                     // 获取消息时间戳
                     long msgTime = 0;
                     try {
@@ -604,7 +704,62 @@ public class MessageInterceptor {
                         msgTime = System.currentTimeMillis();
                     }
                     
-                    MessageContextManager.addMessage(senderUin, senderName, msgContent, false, msgId, msgTime);
+                    // 【新增】提取引用回复的内容并添加到上下文
+                    try {
+                        List<?> elements = (List<?>) XposedHelpers.getObjectField(msgRecord, "elements");
+                        if (elements != null && !elements.isEmpty()) {
+                            for (Object element : elements) {
+                                try {
+                                    // 尝试获取replyElement
+                                    Object replyElement = XposedHelpers.getObjectField(element, "replyElement");
+                                    if (replyElement != null) {
+                                        // 提取引用的消息文本
+                                        String replyText = null;
+                                        try {
+                                            Object replyTextObj = XposedHelpers.getObjectField(replyElement, "sourceMsgText");
+                                            if (replyTextObj != null) {
+                                                replyText = String.valueOf(replyTextObj);
+                                            }
+                                        } catch (Throwable ignored) {}
+                                        
+                                        // 提取引用消息的发送人
+                                        String replySenderName = null;
+                                        try {
+                                            Object senderShowNameObj = XposedHelpers.getObjectField(replyElement, "senderShowName");
+                                            if (senderShowNameObj != null) {
+                                                replySenderName = String.valueOf(senderShowNameObj);
+                                            }
+                                        } catch (Throwable ignored) {}
+                                        
+                                        // 如果成功提取引用内容，添加到上下文
+                                        if (replyText != null && !replyText.trim().isEmpty() && peerUin != null) {
+                                            if (replySenderName == null || replySenderName.trim().isEmpty()) {
+                                                replySenderName = "引用消息";
+                                            }
+                                            
+                                            // 将引用的消息也添加到上下文（时间戳稍早）
+                                            MessageContextManager.addMessage(
+                                                peerUin,
+                                                replySenderName,
+                                                "[引用] " + replyText,
+                                                false,
+                                                null, // 引用消息没有msgId
+                                                msgTime - 1000  // 时间比当前消息早1秒，确保排序正确
+                                            );
+                                            XposedBridge.log(TAG + ": ✓ 已将引用消息添加到上下文");
+                                        }
+                                        break; // 只处理第一个replyElement
+                                    }
+                                } catch (Throwable ignored) {
+                                    // replyElement字段不存在或获取失败，继续下一个element
+                                }
+                            }
+                        }
+                    } catch (Throwable t) {
+                        XposedBridge.log(TAG + ": Error extracting reply content: " + t.getMessage());
+                    }
+                    
+                    MessageContextManager.addMessage(peerUin, senderName, msgContent, false, msgId, msgTime);
                 }
             } catch (Throwable t) {
                 XposedBridge.log(TAG + ": Error saving message to context: " + t.getMessage());
@@ -634,8 +789,9 @@ public class MessageInterceptor {
                 handleLegacyLayout(context, rootView, optionBar);
             }
             
-            // 填充选项条内容（本地词库或AI，传递senderUin作为conversationId）
-            fillOptionBarContent(context, optionBar, msgRecord, msgId, senderUin);
+            // 填充选项条内容（本地词库或AI，传递peerUin作为conversationId，确保群聊上下文正确）
+            String conversationId = (peerUin != null && !peerUin.isEmpty()) ? peerUin : senderUin;
+            fillOptionBarContent(context, optionBar, msgRecord, msgId, conversationId);
             
             // XposedBridge.log(TAG + ": Successfully added option bar to QQNT message");
 
@@ -869,5 +1025,15 @@ public class MessageInterceptor {
         drawable.setColor(color);
         drawable.setCornerRadius(radiusPx);
         return drawable;
+    }
+
+    // 辅助方法：判断类是否是 RecyclerView 或其子类
+    private static boolean isRecyclerView(Class<?> clazz) {
+        if (clazz == null) return false;
+        if ("androidx.recyclerview.widget.RecyclerView".equals(clazz.getName()) || 
+            "android.support.v7.widget.RecyclerView".equals(clazz.getName())) {
+            return true;
+        }
+        return isRecyclerView(clazz.getSuperclass());
     }
 }

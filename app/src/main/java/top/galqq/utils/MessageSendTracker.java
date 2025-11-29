@@ -159,61 +159,103 @@ public class MessageSendTracker {
                             }
                             XposedBridge.log(TAG + ": ═══════════════════════════════════");
                             
-                            // 【提取发送的消息并添加到上下文】
-                            try {
-                                // 从元素列表中提取文本内容
-                                java.util.List<?> elementsList = (java.util.List<?>) param.args[0];
-                                if (elementsList != null && !elementsList.isEmpty()) {
-                                    StringBuilder messageText = new StringBuilder();
-                                    
-                                    for (Object element : elementsList) {
-                                        try {
-                                            // 获取TextElement (字段名可能是c或h)
-                                            Object textElement = null;
+                            // 【提取发送的消息并添加到上下文】- 只在n0方法中执行
+                            if (methodName.equals("n0")) {
+                                try {
+                                    // 从元素列表中提取文本内容和引用内容
+                                    java.util.List<?> elementsList = (java.util.List<?>) param.args[0];
+                                    if (elementsList != null && !elementsList.isEmpty()) {
+                                        StringBuilder messageText = new StringBuilder();
+                                        String replyContent = null;
+                                        String replyNick = null;
+                                        
+                                        for (Object element : elementsList) {
                                             try {
-                                                textElement = XposedHelpers.getObjectField(element, "c");
-                                            } catch (Throwable ignored) {}
-                                            
-                                            if (textElement != null) {
-                                                // 提取content字段
+                                                // 提取 TextElement (字段c)
+                                                Object textElement = null;
                                                 try {
-                                                    Object contentObj = XposedHelpers.getObjectField(textElement, "content");
-                                                    if (contentObj != null) {
-                                                        String content = String.valueOf(contentObj);
-                                                        if (!content.trim().isEmpty()) {
-                                                            messageText.append(content);
-                                                        }
-                                                    }
+                                                    textElement = XposedHelpers.getObjectField(element, "c");
                                                 } catch (Throwable ignored) {}
+                                                
+                                                if (textElement != null) {
+                                                    // 提取content字段
+                                                    try {
+                                                        Object contentObj = XposedHelpers.getObjectField(textElement, "content");
+                                                        if (contentObj != null) {
+                                                            String content = String.valueOf(contentObj);
+                                                            if (!content.trim().isEmpty()) {
+                                                                messageText.append(content);
+                                                            }
+                                                        }
+                                                    } catch (Throwable ignored) {}
+                                                }
+                                                
+                                                // 提取 ReplyElement (字段h)
+                                                if (replyContent == null) {  // 只提取第一个
+                                                    try {
+                                                        Object replyElement = XposedHelpers.getObjectField(element, "h");
+                                                        if (replyElement != null) {
+                                                            // 提取引用的内容
+                                                            try {
+                                                                Object replyContentObj = XposedHelpers.getObjectField(replyElement, "replyContent");
+                                                                if (replyContentObj != null) {
+                                                                    replyContent = String.valueOf(replyContentObj);
+                                                                }
+                                                            } catch (Throwable ignored) {}
+                                                            
+                                                            // 提取引用的昵称
+                                                            try {
+                                                                Object replyNickObj = XposedHelpers.getObjectField(replyElement, "replyNick");
+                                                                if (replyNickObj != null) {
+                                                                    replyNick = String.valueOf(replyNickObj);
+                                                                }
+                                                            } catch (Throwable ignored) {}
+                                                        }
+                                                    } catch (Throwable ignored) {}
+                                                }
+                                            } catch (Throwable ignored) {}
+                                        }
+                                        
+                                        String finalText = messageText.toString().trim();
+                                        
+                                        // 获取peerUin
+                                        String peerUin = null;
+                                        try {
+                                            if (param.args.length > 2 && param.args[2] != null) {
+                                                peerUin = String.valueOf(param.args[2]);
                                             }
                                         } catch (Throwable ignored) {}
-                                    }
-                                    
-                                    String finalText = messageText.toString().trim();
-                                    
-                                    // 获取peerUin
-                                    String peerUin = null;
-                                    try {
-                                        if (param.args.length > 2 && param.args[2] != null) {
-                                            peerUin = String.valueOf(param.args[2]);
+                                        
+                                        // 先添加引用的消息（如果有）
+                                        if (peerUin != null && replyContent != null && !replyContent.trim().isEmpty()) {
+                                            MessageContextManager.addMessage(
+                                                peerUin,
+                                                replyNick != null ? replyNick : "引用消息",
+                                                "[引用] " + replyContent,
+                                                false,  // 被引用的不是自己发的
+                                                null,
+                                                System.currentTimeMillis() - 1000  // 时间稍早
+                                            );
+                                            XposedBridge.log(TAG + ": ✓ 已将引用消息添加到上下文: " + replyContent.substring(0, Math.min(30, replyContent.length())));
                                         }
-                                    } catch (Throwable ignored) {}
-                                    
-                                    // 添加到上下文
-                                    if (peerUin != null && !finalText.isEmpty()) {
-                                        MessageContextManager.addMessage(
-                                            peerUin,
-                                            "我",
-                                            finalText,
-                                            true,  // isSelf = true
-                                            null,
-                                            System.currentTimeMillis()
-                                        );
-                                        XposedBridge.log(TAG + ": ✓ 已将发送的消息添加到上下文: [" + peerUin + "] " + finalText);
+                                        
+                                        // 再添加自己发送的消息
+                                        if (peerUin != null && !finalText.isEmpty()) {
+                                            MessageContextManager.addMessage(
+                                                peerUin,
+                                                "我",
+                                                finalText,
+                                                true,  // isSelf = true
+                                                null,
+                                                System.currentTimeMillis()
+                                            );
+                                            XposedBridge.log(TAG + ": ✓ 已将发送的消息添加到上下文: [" + peerUin + "] " + finalText);
+                                        }
                                     }
+                                } catch (Throwable t) {
+                                    XposedBridge.log(TAG + ": 提取发送消息失败: " + t.getMessage());
+                                    XposedBridge.log(t);
                                 }
-                            } catch (Throwable t) {
-                                XposedBridge.log(TAG + ": 提取发送消息失败: " + t.getMessage());
                             }
                         }
                     });

@@ -14,7 +14,7 @@
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="Galgame style response options for QQ" />
+            android:value="为你的qq增加选项，让你的qq变成galgame！" />
         <meta-data
             android:name="xposedminversion"
             android:value="51" />

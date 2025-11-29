@@ -30,6 +30,7 @@ public class ConfigManager {
     // Context Keys
     public static final String KEY_CONTEXT_ENABLED = "gal_context_enabled";
     public static final String KEY_CONTEXT_MESSAGE_COUNT = "gal_context_message_count";
+    public static final String KEY_HISTORY_THRESHOLD = "gal_history_threshold";
 
     // AI Providers
     public static final String PROVIDER_OPENAI = "openai";
@@ -49,7 +50,8 @@ public class ConfigManager {
     
     // Context Default Values
     public static final boolean DEFAULT_CONTEXT_ENABLED = true;
-    public static final int DEFAULT_CONTEXT_MESSAGE_COUNT = 10;
+    public static final int DEFAULT_CONTEXT_MESSAGE_COUNT = 15; // 从10改为15
+    public static final int DEFAULT_HISTORY_THRESHOLD = 600; // 历史消息阈值（秒），默认10分钟
     
     // QPS Default Value
     public static final float DEFAULT_AI_QPS = 3.0f;
@@ -284,12 +286,20 @@ public class ConfigManager {
     
     public static int getContextMessageCount() {
         int count = getMmkv().decodeInt(KEY_CONTEXT_MESSAGE_COUNT, DEFAULT_CONTEXT_MESSAGE_COUNT);
-        // 限制在1-20之间
-        return Math.max(1, Math.min(20, count));
+        // 限制在1-30之间（从20改为30）
+        return Math.max(1, Math.min(30, count));
     }
     
     public static void setContextMessageCount(int count) {
         getMmkv().encode(KEY_CONTEXT_MESSAGE_COUNT, count);
+    }
+    
+    public static int getHistoryThreshold() {
+        return getMmkv().decodeInt(KEY_HISTORY_THRESHOLD, DEFAULT_HISTORY_THRESHOLD);
+    }
+    
+    public static void setHistoryThreshold(int seconds) {
+        getMmkv().encode(KEY_HISTORY_THRESHOLD, seconds);
     }
 
     // ========== Generic Methods ==========

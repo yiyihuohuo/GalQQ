@@ -94,17 +94,24 @@
             android:summary="查看当前队列状态、QPS和正在处理的请求" />
         
         <SwitchPreference
-            android:key="context_enabled"
+            android:key="gal_context_enabled"
             android:title="启用对话上下文"
             android:summary="发送历史消息给AI，生成更贴合语境的回复"
             android:defaultValue="true" />
         
         <EditTextPreference
-            android:key="context_message_count"
+            android:key="gal_context_message_count"
             android:title="上下文消息数"
-            android:summary="发送给AI的历史消息条数（1-20）"
+            android:summary="发送给AI的历史消息条数（1-30）"
             android:inputType="number"
-            android:defaultValue="10" />
+            android:defaultValue="15" />
+        
+        <EditTextPreference
+            android:key="gal_history_threshold"
+            android:title="历史消息阈值"
+            android:summary="超过此时间（秒）的消息不触发AI（默认：600秒 = 10分钟）"
+            android:inputType="number"
+            android:defaultValue="600" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="过滤设置">

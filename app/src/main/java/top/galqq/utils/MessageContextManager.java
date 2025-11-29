@@ -49,7 +49,7 @@ public class MessageContextManager {
         
         @Override
         public String toString() {
-            return (isSelf ? "我" : senderName) + ": " + content;
+            return senderName + ": " + content;
         }
     }
     
@@ -109,7 +109,16 @@ public class MessageContextManager {
      */
     public static void addMessage(String conversationId, String senderName, String content, 
                                   boolean isSelf, String msgId, long msgTime) {
+        XposedBridge.log(TAG + ": 📥 准备添加消息到上下文");
+        XposedBridge.log(TAG + ":   conversationId=" + conversationId);
+        XposedBridge.log(TAG + ":   senderName=" + senderName);
+        XposedBridge.log(TAG + ":   content=" + (content != null ? content.substring(0, Math.min(50, content.length())) : "null"));
+        XposedBridge.log(TAG + ":   isSelf=" + isSelf);
+        XposedBridge.log(TAG + ":   msgId=" + msgId);
+        XposedBridge.log(TAG + ":   timestamp=" + msgTime);
+        
         if (conversationId == null || content == null || content.trim().isEmpty()) {
+            XposedBridge.log(TAG + ": ❌ 拒绝添加：conversationId或content为空");
             return;
         }
         
@@ -131,6 +140,7 @@ public class MessageContextManager {
                 synchronized (context.messages) {
                     for (ChatMessage msg : context.messages) {
                         if (msgId.equals(msg.msgId)) {
+                            XposedBridge.log(TAG + ": ⚠️ 跳过重复消息 (msgId=" + msgId + ")");
                             return;
                         }
                     }
@@ -149,6 +159,11 @@ public class MessageContextManager {
             );
             
             context.addMessage(message);
+            
+            XposedBridge.log(TAG + ": ✅ 成功添加消息 [" + conversationId + "] " 
+                + senderName + ": " + content.substring(0, Math.min(30, content.length())) 
+                + (content.length() > 30 ? "..." : ""));
+            XposedBridge.log(TAG + ":   当前会话消息数=" + context.messages.size());
             
         } catch (Exception e) {
             XposedBridge.log(TAG + ": Error adding message: " + e.getMessage());

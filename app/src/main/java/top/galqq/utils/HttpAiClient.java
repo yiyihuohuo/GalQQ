@@ -51,21 +51,24 @@ public class HttpAiClient {
     }
 
     /**
-     * 获取AI生成的回复选项（无上下文，向后兼容）
+     * 获取AI生成的回复选项（无上下文和元数据，向后兼容）
      */
     public static void fetchOptions(Context context, String userMessage, AiCallback callback) {
-        fetchOptions(context, userMessage, null, callback);
+        fetchOptions(context, userMessage, null, 0, null, callback);
     }
 
     /**
-     * 获取AI生成的回复选项（带上下文）
+     * 获取AI生成的回复选项（带上下文和当前消息元数据）
      * 
      * @param context Android上下文
-     * @param userMessage 当前用户消息
+     * @param userMessage 当前用户消息内容
+     * @param currentSenderName 当前消息发送人昵称
+     * @param currentTimestamp 当前消息时间戳
      * @param contextMessages 历史上下文消息（可为null）
      * @param callback 回调
      */
-    public static void fetchOptions(Context context, String userMessage, 
+    public static void fetchOptions(Context context, String userMessage,
+                                    String currentSenderName, long currentTimestamp,
                                     List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
                                     AiCallback callback) {
         String apiUrl = ConfigManager.getApiUrl();
@@ -120,19 +123,33 @@ public class HttpAiClient {
                     String timeStr = timeFormat.format(new java.util.Date(msg.timestamp));
                     
                     // 格式化为 "发送人 [时间]: 消息内容"
-                    String formattedContent = msg.isSelf ? 
-                        "我 [" + timeStr + "]: " + msg.content : 
-                        msg.senderName + " [" + timeStr + "]: " + msg.content;
+                    // 格式化为 "发送人 [时间]: 消息内容"
+                    String formattedContent = msg.senderName + " [" + timeStr + "]: " + msg.content;
                     ctxMsg.put("content", formattedContent);
                     messages.put(ctxMsg);
                 }
                 Log.i(TAG, "Added " + contextMessages.size() + " context messages");
             }
 
-            // 当前用户消息
+            // 当前用户消息（添加特殊标注）
             JSONObject userMsg = new JSONObject();
             userMsg.put("role", "user");
-            userMsg.put("content", userMessage);
+            
+            // 格式化当前消息：添加[当前需添加选项信息]标签
+            String formattedCurrentMsg;
+            if (currentSenderName != null && !currentSenderName.isEmpty() && currentTimestamp > 0) {
+                // 创建时间格式化器
+                java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault());
+                String currentTimeStr = timeFormat.format(new java.util.Date(currentTimestamp));
+                
+                // 格式：[当前需添加选项信息] 昵称 [时间]: 内容
+                formattedCurrentMsg = "[当前需添加选项信息] " + currentSenderName + " [" + currentTimeStr + "]: " + userMessage;
+            } else {
+                // 降级：如果没有元数据，仅添加标签
+                formattedCurrentMsg = "[当前需添加选项信息] " + userMessage;
+            }
+            
+            userMsg.put("content", formattedCurrentMsg);
             messages.put(userMsg);
 
             jsonBody.put("messages", messages);

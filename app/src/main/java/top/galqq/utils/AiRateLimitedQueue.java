@@ -101,9 +101,11 @@ public class AiRateLimitedQueue {
      */
     public void submitRequest(Context context, String msgContent, String msgId, Priority priority, 
                               List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
+                              String currentSenderName, long currentTimestamp,
                               HttpAiClient.AiCallback callback) {
         PrioritizedRequest request = new PrioritizedRequest(
-            context, msgContent, msgId, priority, contextMessages, callback, System.currentTimeMillis()
+            context, msgContent, msgId, priority, contextMessages, 
+            currentSenderName, currentTimestamp, callback, System.currentTimeMillis()
         );
         
         boolean added = requestQueue.offer(request);
@@ -244,7 +246,8 @@ public class AiRateLimitedQueue {
         
         synchronized (lock) {
             // 异步调用转同步（带上下文）
-            HttpAiClient.fetchOptions(request.context, request.msgContent, 
+            HttpAiClient.fetchOptions(request.context, request.msgContent,
+                                     request.currentSenderName, request.currentTimestamp,
                                      request.contextMessages, new HttpAiClient.AiCallback() {
                 @Override
                 public void onSuccess(List<String> options) {
@@ -350,17 +353,22 @@ public class AiRateLimitedQueue {
         final String msgId; // 用于持久化和缓存
         final Priority priority;
         final List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages; // 上下文消息
+        final String currentSenderName; // 当前消息发送人昵称
+        final long currentTimestamp; // 当前消息时间戳
         final HttpAiClient.AiCallback callback;
         final long timestamp;  // 同优先级按时间排序
         
         PrioritizedRequest(Context context, String msgContent, String msgId, Priority priority, 
                           List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
+                          String currentSenderName, long currentTimestamp,
                           HttpAiClient.AiCallback callback, long timestamp) {
             this.context = context;
             this.msgContent = msgContent;
             this.msgId = msgId;
             this.priority = priority;
             this.contextMessages = contextMessages;
+            this.currentSenderName = currentSenderName;
+            this.currentTimestamp = currentTimestamp;
             this.callback = callback;
             this.timestamp = timestamp;
         }
@@ -416,7 +424,7 @@ public class AiRateLimitedQueue {
                 
                 // 恢复的请求不包含上下文（传null）
                 return new PrioritizedRequest(context, msgContent, msgId, 
-                    Priority.fromInt(priorityVal), null, restoreCallback, timestamp);
+                    Priority.fromInt(priorityVal), null, null, 0, restoreCallback, timestamp);
             } catch (Exception e) {
                 return null;
             }

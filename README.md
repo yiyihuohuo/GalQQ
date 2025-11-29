@@ -198,8 +198,6 @@ chore: 构建/工具相关
 
 - [LSPosed Framework](https://github.com/LSPosed/LSPosed) - 提供强大的 Hook 框架
 - [QAuxiliary](https://github.com/cinit/QAuxiliary) - 提供架构参考和灵感
-- [Jetpack Compose](https://developer.android.com/jetpack/compose) - 现代化 UI 框架
-
 ---
 
 **⭐ 如果这个项目对你有帮助，请给我们一个 Star！**

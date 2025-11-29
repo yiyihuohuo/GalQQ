@@ -153,7 +153,7 @@
         <Preference
             android:key="gal_join_group"
             android:title="加入交流群"
-            android:summary="点击加入" />
+            android:summary="点击加入1026163188" />
             
         <Preference
             android:key="gal_version"

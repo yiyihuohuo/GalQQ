@@ -269,13 +269,30 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
             });
         }
 
-        // Join Group
+        // Join Group - 实现加入QQ群1026163188
         Preference joinGroupPref = findPreference("gal_join_group");
         if (joinGroupPref != null) {
             joinGroupPref.setOnPreferenceClickListener(preference -> {
-                android.widget.Toast.makeText(requireContext(), "暂未开放加群", android.widget.Toast.LENGTH_SHORT).show();
-                // TODO: Implement join group logic
-                return true;
+                try {
+                    // QQ群号
+                    String groupNumber = "1026163188";
+                    
+                    // 构建QQ群跳转链接（使用mqqapi协议）
+                    // 格式：mqqapi://card/show_pslcard?src_type=internal&version=1&uin=群号&card_type=group&source=qrcode
+                    String url = "mqqapi://card/show_pslcard?src_type=internal&version=1&uin=" + 
+                                groupNumber + "&card_type=group&source=qrcode";
+                    
+                    android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW);
+                    intent.setData(android.net.Uri.parse(url));
+                    intent.setFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                    
+                    requireContext().startActivity(intent);
+                    android.widget.Toast.makeText(requireContext(), "正在打开QQ群...", android.widget.Toast.LENGTH_SHORT).show();
+                    return true;
+                } catch (Exception e) {
+                    android.widget.Toast.makeText(requireContext(), "打开QQ群失败: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+                    return false;
+                }
             });
         }
     }

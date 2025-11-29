@@ -21,10 +21,14 @@
         <meta-data
             android:name="xposedscope"
             android:value="com.tencent.mobileqq" />
+        <meta-data
+            android:name="xposed.icon"
+            android:resource="@drawable/ic_xposed" />
 
         <activity
             android:name=".ui.SettingsUiFragmentHostActivity"
             android:label="GalQQ Settings"
+            android:icon="@mipmap/ic_launcher"
             android:exported="true"
             android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
             <intent-filter>

@@ -15,7 +15,7 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = 105
-        versionName = "1.0.5"
+        versionName = "1.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -56,6 +56,9 @@ dependencies {
 
     // 添加XposedBridge依赖
     compileOnly("de.robv.android.xposed:api:82")
+
+    // 添加protobuf依赖
+    implementation("com.google.protobuf:protobuf-java:4.29.2")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

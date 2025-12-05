@@ -78,19 +78,42 @@ public class CookieHelper {
         debugLog(TAG + ":   skey: " + (CookieHookManager.getCachedSkey() != null ? "有值" : "空"));
         debugLog(TAG + ":   p_skey: " + (CookieHookManager.getCachedPSkey() != null ? "有值" : "空"));
         debugLog(TAG + ":   uin: " + (CookieHookManager.getCachedUin() != null ? CookieHookManager.getCachedUin() : "空"));
-        debugLog(TAG + ":   p_uid: " + (CookieHookManager.getCachedPUid() != null ? "有值" : "空"));
+        String puid = CookieHookManager.getCachedPUid();
+        debugLog(TAG + ":   p_uid: " + (puid != null ? puid : "空"));
         debugLog(TAG + ":   isCacheValid: " + CookieHookManager.isCacheValid());
+        long lastUpdate = CookieHookManager.getLastUpdateTime();
+        if (lastUpdate > 0) {
+            long ageSeconds = (System.currentTimeMillis() - lastUpdate) / 1000;
+            debugLog(TAG + ":   缓存时间: " + ageSeconds + "秒前");
+        } else {
+            debugLog(TAG + ":   缓存时间: 从未更新");
+        }
         
         // 方法0：如果内存缓存无效，尝试主动触发Cookie获取
         if (!CookieHookManager.isCacheValid()) {
             debugLog(TAG + ": [TRIGGER] 内存缓存无效，尝试主动触发获取...");
             triggerCookieFetch(context);
             
+            // 等待一小段时间，让Hook有机会捕获数据
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                // 忽略中断
+            }
+            
             // 再次检查缓存状态
             debugLog(TAG + ": [DEBUG] 触发后内存缓存状态:");
             debugLog(TAG + ":   skey: " + (CookieHookManager.getCachedSkey() != null ? "有值" : "空"));
             debugLog(TAG + ":   p_skey: " + (CookieHookManager.getCachedPSkey() != null ? "有值" : "空"));
             debugLog(TAG + ":   uin: " + (CookieHookManager.getCachedUin() != null ? CookieHookManager.getCachedUin() : "空"));
+            String puidAfter = CookieHookManager.getCachedPUid();
+            debugLog(TAG + ":   p_uid: " + (puidAfter != null ? puidAfter : "空"));
+            debugLog(TAG + ":   isCacheValid: " + CookieHookManager.isCacheValid());
+            long lastUpdateAfter = CookieHookManager.getLastUpdateTime();
+            if (lastUpdateAfter > 0) {
+                long ageSecondsAfter = (System.currentTimeMillis() - lastUpdateAfter) / 1000;
+                debugLog(TAG + ":   缓存时间: " + ageSecondsAfter + "秒前");
+            }
         }
         
         // 方法1：优先从内存缓存获取（通过Hook）
@@ -189,21 +212,25 @@ public class CookieHelper {
     private static void triggerCookieFetch(Context context) {
         String cachedUin = CookieHookManager.getCachedUin();
         
-        // 如果已经有完整的缓存，不需要触发
+        debugLog(TAG + ": [TRIGGER] 开始主动触发Cookie获取");
+        debugLog(TAG + ": [TRIGGER] 当前缓存状态 - UIN: " + (cachedUin != null ? "有值" : "空") + 
+                 ", isCacheValid: " + CookieHookManager.isCacheValid());
+        
         if (CookieHookManager.isCacheValid()) {
+            debugLog(TAG + ": [TRIGGER] 缓存已有效，无需触发");
             return;
         }
         
-        // 优先尝试使用缓存的TicketManager实例
         if (cachedUin != null && !cachedUin.isEmpty()) {
             debugLog(TAG + ": [TRIGGER] 已有缓存UIN: " + cachedUin + "，尝试主动获取skey/p_skey");
             
-            // 方法0：使用缓存的TicketManager实例（最可靠）
             if (CookieHookManager.getCachedTicketManager() != null) {
                 debugLog(TAG + ": [TRIGGER] 使用缓存的TicketManager实例");
                 if (CookieHookManager.fetchSkeyAndPskeyFromTicketManager(cachedUin)) {
                     debugLog(TAG + ": [TRIGGER] ✓ 从缓存TicketManager获取成功");
                     return;
+                } else {
+                    debugLog(TAG + ": [TRIGGER] ✗ 从缓存TicketManager获取失败，尝试其他方法");
                 }
             } else {
                 debugLog(TAG + ": [TRIGGER] TicketManager实例未缓存，尝试其他方法");
@@ -213,7 +240,8 @@ public class CookieHelper {
             return;
         }
         
-        // 尝试从多个来源获取UIN
+        debugLog(TAG + ": [TRIGGER] 未找到缓存UIN，尝试从其他来源获取");
+        
         String uin = null;
         
         // 方法1：通过AppRuntimeHelper获取（模仿QAuxiliary）
@@ -224,9 +252,12 @@ public class CookieHelper {
                 if (uinObj != null) {
                     uin = String.valueOf(uinObj);
                     debugLog(TAG + ": [TRIGGER] 从AppRuntime获取到UIN: " + uin);
-                    // 同时更新CookieHookManager的缓存
                     CookieHookManager.setCachedUin(uin);
+                } else {
+                    debugLog(TAG + ": [TRIGGER] AppRuntime.getCurrentAccountUin返回null");
                 }
+            } else {
+                debugLog(TAG + ": [TRIGGER] AppRuntime为null");
             }
         } catch (Throwable t) {
             debugLog(TAG + ": [TRIGGER] AppRuntime获取UIN失败: " + t.getMessage());
@@ -236,7 +267,10 @@ public class CookieHelper {
         if (uin == null || uin.isEmpty()) {
             uin = getCurrentUin(context);
             if (uin != null && !uin.isEmpty()) {
+                debugLog(TAG + ": [TRIGGER] 从getCurrentUin获取到UIN: " + uin);
                 CookieHookManager.setCachedUin(uin);
+            } else {
+                debugLog(TAG + ": [TRIGGER] getCurrentUin返回空");
             }
         }
         
@@ -244,16 +278,19 @@ public class CookieHelper {
         if (uin == null || uin.isEmpty()) {
             uin = getUinFromSqlite(context);
             if (uin != null && !uin.isEmpty()) {
+                debugLog(TAG + ": [TRIGGER] 从SQLite获取到UIN: " + uin);
                 CookieHookManager.setCachedUin(uin);
+            } else {
+                debugLog(TAG + ": [TRIGGER] SQLite返回空");
             }
         }
         
         if (uin == null || uin.isEmpty()) {
-            debugLog(TAG + ": [TRIGGER] 无法获取UIN，跳过主动触发");
+            debugLog(TAG + ": [TRIGGER] ✗ 无法获取UIN，跳过主动触发");
             return;
         }
         
-        debugLog(TAG + ": [TRIGGER] 尝试主动触发Cookie获取, uin=" + uin);
+        debugLog(TAG + ": [TRIGGER] 获取到UIN: " + uin + "，开始主动触发Cookie获取");
         
         // 尝试通过多种方式获取TicketManager
         Object appRuntime = null;
@@ -331,6 +368,19 @@ public class CookieHelper {
      */
     private static void triggerWithTicketManager(Object ticketManager, String uin) {
         debugLog(TAG + ": [TRIGGER] TicketManager类型: " + ticketManager.getClass().getName());
+        debugLog(TAG + ": [TRIGGER] 目标UIN: " + uin);
+        
+        // 缓存TicketManager实例供后续使用
+        if (CookieHookManager.getCachedTicketManager() == null) {
+            try {
+                java.lang.reflect.Field field = CookieHookManager.class.getDeclaredField("sCachedTicketManager");
+                field.setAccessible(true);
+                field.set(null, ticketManager);
+                debugLog(TAG + ": [TRIGGER] ✓ 缓存TicketManager实例成功");
+            } catch (Throwable t) {
+                debugLog(TAG + ": [TRIGGER] 缓存TicketManager实例失败: " + t.getMessage());
+            }
+        }
         
         try {
             Object skey = XposedHelpers.callMethod(ticketManager, "getSkey", uin);
@@ -340,10 +390,11 @@ public class CookieHelper {
                 String preview = ((String) skey).length() > 10 ? ((String) skey).substring(0, 10) + "..." : (String) skey;
                 debugLog(TAG + ": [TRIGGER] ✓ getSkey调用成功: " + preview);
             } else {
-                debugLog(TAG + ": [TRIGGER] ✗ getSkey调用成功，但返回值为空或非String");
+                debugLog(TAG + ": [TRIGGER] ✗ getSkey返回值为空或非String: " + skey);
             }
         } catch (Throwable t) {
             debugLog(TAG + ": [TRIGGER] getSkey调用失败: " + t.getClass().getName() + ": " + t.getMessage());
+            t.printStackTrace();
         }
         
         try {
@@ -354,11 +405,15 @@ public class CookieHelper {
                 String preview = ((String) pskey).length() > 10 ? ((String) pskey).substring(0, 10) + "..." : (String) pskey;
                 debugLog(TAG + ": [TRIGGER] ✓ getPskey调用成功: " + preview);
             } else {
-                debugLog(TAG + ": [TRIGGER] ✗ getPskey调用成功，但返回值为空或非String");
+                debugLog(TAG + ": [TRIGGER] ✗ getPskey返回值为空或非String: " + pskey);
             }
         } catch (Throwable t) {
             debugLog(TAG + ": [TRIGGER] getPskey调用失败: " + t.getClass().getName() + ": " + t.getMessage());
+            t.printStackTrace();
         }
+        
+        // 最后再次确认缓存状态
+        debugLog(TAG + ": [TRIGGER] 最终缓存状态 - isCacheValid: " + CookieHookManager.isCacheValid());
     }
     
     /**
@@ -458,15 +513,27 @@ public class CookieHelper {
         
         // 内存缓存状态
         sb.append("内存缓存状态:\n");
-        sb.append("  skey: ").append(CookieHookManager.getCachedSkey() != null ? "已缓存" : "未缓存").append("\n");
-        sb.append("  p_skey: ").append(CookieHookManager.getCachedPSkey() != null ? "已缓存" : "未缓存").append("\n");
-        sb.append("  uin: ").append(CookieHookManager.getCachedUin() != null ? CookieHookManager.getCachedUin() : "未缓存").append("\n");
-        sb.append("  p_uid: ").append(CookieHookManager.getCachedPUid() != null ? "已缓存" : "未缓存").append("\n");
+        
+        String skey = CookieHookManager.getCachedSkey();
+        String pskey = CookieHookManager.getCachedPSkey();
+        String uin = CookieHookManager.getCachedUin();
+        String puid = CookieHookManager.getCachedPUid();
+        
+        sb.append("  skey: ").append(skey != null ? "已缓存 (" + skey.substring(0, Math.min(8, skey.length())) + "...)" : "未缓存").append("\n");
+        sb.append("  p_skey: ").append(pskey != null ? "已缓存 (" + pskey.substring(0, Math.min(8, pskey.length())) + "...)" : "未缓存").append("\n");
+        sb.append("  uin: ").append(uin != null ? uin : "未缓存").append("\n");
+        sb.append("  p_uid: ").append(puid != null ? puid : "未缓存").append("\n");
         
         // 过期状态
-        if (CookieHookManager.getLastUpdateTime() > 0) {
-            long ageMinutes = (System.currentTimeMillis() - CookieHookManager.getLastUpdateTime()) / 60000;
-            sb.append("  缓存时间: ").append(ageMinutes).append("分钟前");
+        long lastUpdateTime = CookieHookManager.getLastUpdateTime();
+        if (lastUpdateTime > 0) {
+            long ageSeconds = (System.currentTimeMillis() - lastUpdateTime) / 1000;
+            if (ageSeconds < 60) {
+                sb.append("  缓存时间: ").append(ageSeconds).append("秒前");
+            } else {
+                long ageMinutes = ageSeconds / 60;
+                sb.append("  缓存时间: ").append(ageMinutes).append("分钟前");
+            }
             if (CookieHookManager.isCachePossiblyExpired()) {
                 sb.append(" (可能已过期)");
             }
@@ -533,7 +600,29 @@ public class CookieHelper {
                 }
             }
             
-            // 将p_uid缓存到CookieHookManager（如果存在）
+            // 将关键Cookie缓存到CookieHookManager
+            if (cookieMap.containsKey("uin") || cookieMap.containsKey("p_uin")) {
+                String uin = cookieMap.containsKey("p_uin") ? cookieMap.get("p_uin").value : cookieMap.get("uin").value;
+                // 移除o前缀
+                if (uin != null && uin.startsWith("o")) {
+                    uin = uin.substring(1);
+                }
+                if (uin != null && !uin.isEmpty()) {
+                    CookieHookManager.setCachedUin(uin);
+                    debugLog(TAG + ": [SQLITE] 已缓存uin到内存: " + uin);
+                }
+            }
+            
+            if (cookieMap.containsKey("skey")) {
+                CookieHookManager.setCachedSkey(cookieMap.get("skey").value);
+                debugLog(TAG + ": [SQLITE] 已缓存skey到内存");
+            }
+            
+            if (cookieMap.containsKey("p_skey")) {
+                CookieHookManager.setCachedPSkey(cookieMap.get("p_skey").value);
+                debugLog(TAG + ": [SQLITE] 已缓存p_skey到内存");
+            }
+            
             if (cookieMap.containsKey("p_uid")) {
                 CookieHookManager.setCachedPUid(cookieMap.get("p_uid").value);
                 debugLog(TAG + ": [SQLITE] 已缓存p_uid到内存");
@@ -739,6 +828,31 @@ public class CookieHelper {
      */
     public static String getCookie(Context context, String name) {
         try {
+            // 方法0：优先从内存缓存获取
+            if (CookieHookManager.isCacheValid()) {
+                if ("skey".equals(name)) {
+                    String skey = CookieHookManager.getCachedSkey();
+                    if (skey != null && !skey.isEmpty()) {
+                        return skey;
+                    }
+                } else if ("p_skey".equals(name)) {
+                    String pskey = CookieHookManager.getCachedPSkey();
+                    if (pskey != null && !pskey.isEmpty()) {
+                        return pskey;
+                    }
+                } else if ("uin".equals(name) || "p_uin".equals(name)) {
+                    String uin = CookieHookManager.getCachedUin();
+                    if (uin != null && !uin.isEmpty()) {
+                        return uin;
+                    }
+                } else if ("p_uid".equals(name)) {
+                    String puid = CookieHookManager.getCachedPUid();
+                    if (puid != null && !puid.isEmpty()) {
+                        return puid;
+                    }
+                }
+            }
+            
             // 尝试通过 QQ 的 CookieManager 获取
             ClassLoader classLoader = context.getClassLoader();
             
@@ -845,29 +959,35 @@ public class CookieHelper {
      * @return true 如果所有必需的 Cookie 都可用
      */
     public static boolean isCookiesAvailable(Context context) {
-        String skey = getSkey(context);
-        String pSkey = getPSkey(context);
-        String pUin = getPUin(context);
+        debugLog(TAG + ": ========== Cookie 可用性检查 ==========");
         
-        // 【调试日志】打印 Cookie 获取结果
-        debugLog(TAG + ": ========== Cookie 检查 ==========");
-        debugLog(TAG + ": skey: " + (skey != null ? skey.substring(0, Math.min(10, skey.length())) + "..." : "NULL"));
-        debugLog(TAG + ": p_skey: " + (pSkey != null ? pSkey.substring(0, Math.min(10, pSkey.length())) + "..." : "NULL"));
-        debugLog(TAG + ": p_uin: " + (pUin != null ? pUin : "NULL"));
-        debugLog(TAG + ": ==================================");
+        String cookies = getCookies(context);
         
-        boolean available = skey != null && !skey.isEmpty()
-                && pSkey != null && !pSkey.isEmpty()
-                && pUin != null && !pUin.isEmpty();
-        
-        if (!available) {
-            debugLog(TAG + ": Cookie 不可用 - skey: " + (skey != null) 
-                    + ", p_skey: " + (pSkey != null) 
-                    + ", p_uin: " + (pUin != null));
-        } else {
-            debugLog(TAG + ": Cookie 检查通过 ✓");
+        if (cookies == null || cookies.isEmpty()) {
+            debugLog(TAG + ": Cookie 字符串为空");
+            debugLog(TAG + ": =======================================");
+            return false;
         }
         
+        boolean hasSkey = cookies.contains("skey=");
+        boolean hasPSkey = cookies.contains("p_skey=");
+        boolean hasUin = cookies.contains("uin=");
+        
+        debugLog(TAG + ": Cookie 组件检查:");
+        debugLog(TAG + ":   skey: " + (hasSkey ? "✓" : "✗"));
+        debugLog(TAG + ":   p_skey: " + (hasPSkey ? "✓" : "✗"));
+        debugLog(TAG + ":   uin: " + (hasUin ? "✓" : "✗"));
+        debugLog(TAG + ":   来源: " + sLastSource);
+        
+        boolean available = hasSkey && hasPSkey && hasUin;
+        
+        if (!available) {
+            debugLog(TAG + ": Cookie 不可用");
+        } else {
+            debugLog(TAG + ": Cookie 可用 ✓");
+        }
+        
+        debugLog(TAG + ": =======================================");
         return available;
     }
 }

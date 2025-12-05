@@ -1008,10 +1008,18 @@ public class HttpAiClient {
                     // 获取消息内容
                     String msgContent = msg.content;
                     
+                    // 【修复】如果图片识别关闭，过滤掉消息内容中的图片信息
+                    if (!ConfigManager.isImageRecognitionEnabled() && msgContent != null) {
+                        // 移除 [图片: URL (宽x高)] 格式的内容
+                        msgContent = msgContent.replaceAll("\\[图片:[^\\]]*\\]", "").trim();
+                        // 移除 [图片内容:\n  图1: ...\n  图2: ...] 格式的内容
+                        msgContent = msgContent.replaceAll("\\[图片内容:[^\\]]*\\]", "").trim();
+                    }
+                    
                     // 如果启用上下文图片识别，尝试获取缓存的图片描述或base64
                     // 扩展条件：检查 hasImages 或消息内容中包含图片URL
                     boolean hasImageContent = msg.hasImages && msg.imageCount > 0;
-                    boolean hasImageUrl = msg.content != null && msg.content.contains("[图片:") && msg.content.contains("multimedia.nt.qq.com.cn");
+                    boolean hasImageUrl = msgContent != null && msgContent.contains("[图片:") && msgContent.contains("multimedia.nt.qq.com.cn");
                     
                     if (contextImageEnabled && (hasImageContent || hasImageUrl)) {
                         java.util.List<String> base64Images = new java.util.ArrayList<>();
@@ -1104,6 +1112,15 @@ public class HttpAiClient {
             JSONObject userMsg = new JSONObject();
             userMsg.put("role", "user");
             
+            // 【修复】如果图片识别关闭，过滤掉当前消息中的图片信息
+            String filteredUserMessage = userMessage;
+            if (!ConfigManager.isImageRecognitionEnabled() && filteredUserMessage != null) {
+                // 移除 [图片: URL (宽x高)] 格式的内容
+                filteredUserMessage = filteredUserMessage.replaceAll("\\[图片:[^\\]]*\\]", "").trim();
+                // 移除 [图片内容:\n  图1: ...\n  图2: ...] 格式的内容
+                filteredUserMessage = filteredUserMessage.replaceAll("\\[图片内容:[^\\]]*\\]", "").trim();
+            }
+            
             // 格式化当前消息：添加[当前需添加选项信息]标签
             String formattedCurrentMsg;
             if (currentSenderName != null && !currentSenderName.isEmpty() && currentTimestamp > 0) {
@@ -1112,10 +1129,10 @@ public class HttpAiClient {
                 String currentTimeStr = timeFormat.format(new java.util.Date(currentTimestamp));
                 
                 // 格式：[当前需添加选项信息] 昵称 [时间]: 内容
-                formattedCurrentMsg = "[当前需添加选项信息] " + currentSenderName + " [" + currentTimeStr + "]: " + userMessage;
+                formattedCurrentMsg = "[当前需添加选项信息] " + currentSenderName + " [" + currentTimeStr + "]: " + filteredUserMessage;
             } else {
                 // 降级：如果没有元数据，仅添加标签
-                formattedCurrentMsg = "[当前需添加选项信息] " + userMessage;
+                formattedCurrentMsg = "[当前需添加选项信息] " + filteredUserMessage;
             }
             
             // 检查是否有图片需要发送（OpenAI Vision格式）

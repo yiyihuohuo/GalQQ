@@ -26,6 +26,8 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
+import top.galqq.hook.CookieHookManager;
+
 /**
  * QQ 空间亲密度排行 API 客户端
  * 负责从 Close Rank API 获取好感度数据
@@ -141,9 +143,19 @@ public class CloseRankClient {
      */
     public void fetchBothRankData(Context context, BothRankCallback callback) {
         if (!CookieHelper.isCookiesAvailable(context)) {
-            debugLog(TAG + ": Cookie 不可用，跳过 API 请求");
+            String errorMsg = "获取Cookie失败";
+            CookieHelper.CookieSource source = CookieHelper.getLastCookieSource();
+            
+            debugLog(TAG + ": Cookie不可用 - 来源: " + source);
+            debugLog(TAG + ": Cookie状态: " + CookieHookManager.getCookieSource());
+            
+            if (source == CookieHelper.CookieSource.FAILED) {
+                errorMsg = "获取Cookie失败，请确保已登录QQ并且模块已激活";
+            }
+            
+            String finalErrorMsg = errorMsg;
             if (callback != null) {
-                mMainHandler.post(() -> callback.onFailure(new Exception("Cookie 不可用")));
+                mMainHandler.post(() -> callback.onFailure(new Exception(finalErrorMsg)));
             }
             return;
         }
@@ -201,9 +213,19 @@ public class CloseRankClient {
 
     private void fetchRankData(Context context, int type, RankCallback callback) {
         if (!CookieHelper.isCookiesAvailable(context)) {
-            debugLog(TAG + ": Cookie 不可用，跳过 API 请求");
+            String errorMsg = "获取Cookie失败";
+            CookieHelper.CookieSource source = CookieHelper.getLastCookieSource();
+            
+            debugLog(TAG + ": Cookie不可用 - 来源: " + source);
+            debugLog(TAG + ": Cookie状态: " + CookieHookManager.getCookieSource());
+            
+            if (source == CookieHelper.CookieSource.FAILED) {
+                errorMsg = "获取Cookie失败，请确保已登录QQ并且模块已激活";
+            }
+            
+            String finalErrorMsg = errorMsg;
             if (callback != null) {
-                mMainHandler.post(() -> callback.onFailure(new Exception("Cookie 不可用")));
+                mMainHandler.post(() -> callback.onFailure(new Exception(finalErrorMsg)));
             }
             return;
         }

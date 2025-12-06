@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
@@ -82,10 +83,10 @@ public class MessageInterceptor {
     // 记录已请求显示选项的消息ID，防止View复用时重置回按钮状态
     private static final java.util.Set<String> requestedOptionsMsgIds = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
     
-    // 【收起状态】记录已收起的消息ID，用于区分「显示选项」和「展开选项」按钮
+    // 记录已收起的消息ID，用于区分「显示选项」和「展开选项」按钮
     private static final java.util.Set<String> collapsedMsgIds = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
     
-    // 【好感度缓存】senderUin -> affinity，用于View复用时快速获取
+    // 好感度缓存: senderUin -> affinity，用于View复用时快速获取
     // 这个缓存与 AffinityManager 的缓存不同，这里是为了解决 View 复用时的显示问题
     private static final java.util.Map<String, Integer> affinityDisplayCache = 
         java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<String, Integer>(200, 0.75f, true) {
@@ -296,7 +297,7 @@ public class MessageInterceptor {
     
     private static void setupOptionBarContentWithRoot(Context context, LinearLayout bar, String msgContent, 
                                                Object msgObj, String msgId, String conversationId, ViewGroup rootView) {
-        // 【前置检查】提取senderQQ和peerUin，用于群聊过滤
+        // 提取senderQQ和peerUin，用于群聊过滤
         String senderQQ = null;
         String peerUin = null;
         try {
@@ -312,19 +313,19 @@ public class MessageInterceptor {
             debugLog(TAG + ": Failed to extract sender/peer info for pre-check: " + t.getMessage());
         }
         
-        // 【群聊选项显示控制】在方法开头就检查，避免显示"加载中"后再隐藏
+        // 群聊选项显示控制：在方法开头就检查，避免显示"加载中"后再隐藏
         boolean isGroupChat = peerUin != null && senderQQ != null && !peerUin.equals(senderQQ);
         if (isGroupChat) {
             // 检查是否关闭群聊选项显示
             if (ConfigManager.isDisableGroupOptions()) {
-                debugLog(TAG + ": [PRE-CHECK] Group options disabled, hiding option bar for group: " + peerUin);
+                debugLog(TAG + ": Group options disabled, hiding option bar for group: " + peerUin);
                 bar.setVisibility(View.GONE);
                 return;
             }
             
             // 检查群是否通过过滤（基于群黑白名单和群过滤模式）
             if (!ConfigManager.isGroupPassFilter(peerUin)) {
-                debugLog(TAG + ": [PRE-CHECK] Group " + peerUin + " filtered out, hiding option bar");
+                debugLog(TAG + ": Group " + peerUin + " filtered out, hiding option bar");
                 bar.setVisibility(View.GONE);
                 return;
             }
@@ -381,36 +382,73 @@ public class MessageInterceptor {
             List<MessageContextManager.ChatMessage> contextMessages = null;
             if (ConfigManager.isContextEnabled() && conversationId != null) {
                 int contextCount = ConfigManager.getContextMessageCount();
-                // 多获取一条，以便如果最后一条是当前消息时移除
-                contextMessages = MessageContextManager.getContext(conversationId, contextCount + 1);
                 
-                // 去除当前消息（如果它已经被存入上下文）
-                if (!contextMessages.isEmpty()) {
-                    MessageContextManager.ChatMessage lastMsg = contextMessages.get(contextMessages.size() - 1);
-                    // 通过msgId判断（如果msgId不为空）
-                    boolean isSameMsg = false;
-                    if (msgId != null && lastMsg.msgId != null) {
-                        if (msgId.equals(lastMsg.msgId)) {
-                            isSameMsg = true;
+                // 【优化】判断是否启用自动显示选项
+                boolean autoShow = ConfigManager.isAutoShowOptionsEnabled();
+                
+                if (autoShow) {
+                    // 启用自动显示时，从缓存的上下文管理器获取（已通过拦截缓存）
+                    debugLog(TAG + ": [AUTO_SHOW] 从上下文管理器缓存获取消息");
+                    // 多获取一条，以便如果最后一条是当前消息时移除
+                    contextMessages = MessageContextManager.getContext(conversationId, contextCount + 1);
+                    
+                    // 去除当前消息（如果它已经被存入上下文）
+                    if (!contextMessages.isEmpty()) {
+                        MessageContextManager.ChatMessage lastMsg = contextMessages.get(contextMessages.size() - 1);
+                        // 通过msgId判断（如果msgId不为空）
+                        boolean isSameMsg = false;
+                        if (msgId != null && lastMsg.msgId != null) {
+                            if (msgId.equals(lastMsg.msgId)) {
+                                isSameMsg = true;
+                            }
+                        } else {
+                            // 降级：通过内容和时间戳判断（防止重复）
+                            // 如果内容相同且时间差在1秒内
+                            if (msgContent.equals(lastMsg.content) && 
+                                Math.abs(System.currentTimeMillis() - lastMsg.timestamp) < 1000) {
+                                isSameMsg = true;
+                            }
                         }
-                    } else {
-                        // 降级：通过内容和时间戳判断（防止重复）
-                        // 如果内容相同且时间差在1秒内
-                        if (msgContent.equals(lastMsg.content) && 
-                            Math.abs(System.currentTimeMillis() - lastMsg.timestamp) < 1000) {
-                            isSameMsg = true;
+                        
+                        if (isSameMsg) {
+                            contextMessages.remove(contextMessages.size() - 1);
                         }
                     }
                     
-                    if (isSameMsg) {
-                        contextMessages.remove(contextMessages.size() - 1);
-                        // debugLog("Removed current message from context to avoid duplication");
+                    // 确保数量不超过配置
+                    if (contextMessages.size() > contextCount) {
+                        contextMessages = contextMessages.subList(contextMessages.size() - contextCount, contextMessages.size());
                     }
-                }
-                
-                // 确保数量不超过配置
-                if (contextMessages.size() > contextCount) {
-                    contextMessages = contextMessages.subList(contextMessages.size() - contextCount, contextMessages.size());
+                } else {
+                    // 未启用自动显示时，从本地消息记录获取
+                    debugLog(TAG + ": [ON_DEMAND] 从本地消息记录获取上下文");
+                    try {
+                        Context ctx = bar.getContext();
+                        contextMessages = top.galqq.utils.LocalMessageHelper.getLocalMessages(
+                            ctx, conversationId, contextCount + 1, msgId);
+                        
+                        // 去除当前消息（如果获取到了）
+                        if (!contextMessages.isEmpty()) {
+                            MessageContextManager.ChatMessage lastMsg = contextMessages.get(contextMessages.size() - 1);
+                            boolean isSameMsg = false;
+                            if (msgId != null && lastMsg.msgId != null && msgId.equals(lastMsg.msgId)) {
+                                isSameMsg = true;
+                            }
+                            if (isSameMsg) {
+                                contextMessages.remove(contextMessages.size() - 1);
+                            }
+                        }
+                        
+                        // 确保数量不超过配置
+                        if (contextMessages.size() > contextCount) {
+                            contextMessages = contextMessages.subList(contextMessages.size() - contextCount, contextMessages.size());
+                        }
+                        
+                        debugLog(TAG + ": [ON_DEMAND] 成功获取 " + contextMessages.size() + " 条本地消息");
+                    } catch (Throwable t) {
+                        debugLog(TAG + ": [ON_DEMAND] 从本地获取消息失败，使用空上下文: " + t.getMessage());
+                        contextMessages = new java.util.ArrayList<>();
+                    }
                 }
             }
 
@@ -1330,27 +1368,62 @@ public class MessageInterceptor {
                 return; // Module is disabled, don't show option bar
             }
             
+            // 先获取 peerUin，用于后续判断聊天类型
+            String peerUin = null;
+            try {
+                Object peerUinObj = XposedHelpers.getObjectField(msgRecord, "peerUin");
+                peerUin = String.valueOf(peerUinObj);
+            } catch (Throwable t) {
+                debugLog(TAG + ": Failed to get peerUin: " + t.getMessage());
+            }
+            
             // Check if it's a received message
             int sendType = XposedHelpers.getIntField(msgRecord, "sendType");
             boolean isSelfBySendType = (sendType == 1); // 1=自己发送, 0=收到的消息
             
-            // 【修复】同时通过 senderUin 和当前登录用户 UIN 比较来判断是否是自己发送的消息
-            boolean isSelfBySenderUin = false;
+            // 判断是群聊还是私聊
+            // 在群聊中：peerUin = 群号，senderUin = 发送者QQ
+            // 在私聊中：peerUin = 对方QQ = senderUin（当对方发消息时）
+            boolean isGroupChat = false;
+            String senderUinForDebug = null;
             try {
                 Object senderUinObj = XposedHelpers.getObjectField(msgRecord, "senderUin");
                 String senderUinStr = String.valueOf(senderUinObj);
-                long currentUin = top.galqq.utils.AppRuntimeHelper.getLongAccountUin(context);
-                if (currentUin > 0 && senderUinStr != null && !senderUinStr.isEmpty()) {
-                    // 如果 senderUin 等于当前登录用户的 UIN
-                    isSelfBySenderUin = senderUinStr.equals(String.valueOf(currentUin));
-                }
+                senderUinForDebug = senderUinStr;
+                
+                // 如果 peerUin != senderUin，说明是群聊
+                isGroupChat = (peerUin != null && senderUinStr != null && !peerUin.equals(senderUinStr));
             } catch (Throwable t) {
-                // 获取失败时 isSelfBySenderUin 保持 false
-                // debugLog(TAG + ": [isSelf] Failed to compare senderUin: " + t.getMessage());
+                debugLog(TAG + ": [isSelf] Failed to get senderUin: " + t.getMessage());
             }
             
-            // 【宽松验证】sendType == 1 或 senderUin == currentUin，任一条件满足就认为是自己发送的消息
-            boolean isSelf = isSelfBySendType || isSelfBySenderUin;
+            // 在私聊中，只用 sendType 判断；在群聊中，需要额外用 senderUin 判断
+            boolean isSelfBySenderUin = false;
+            long currentUinForDebug = 0;
+            if (isGroupChat) {
+                // 群聊：需要比较 senderUin 和当前登录用户UIN
+                try {
+                    long currentUin = top.galqq.utils.AppRuntimeHelper.getLongAccountUin(context);
+                    currentUinForDebug = currentUin;
+                    if (currentUin > 0 && senderUinForDebug != null && !senderUinForDebug.isEmpty()) {
+                        isSelfBySenderUin = senderUinForDebug.equals(String.valueOf(currentUin));
+                    }
+                } catch (Throwable t) {
+                    debugLog(TAG + ": [isSelf] Failed to compare senderUin: " + t.getMessage());
+                }
+            }
+            
+            // 根据聊天类型判断：
+            // - 私聊：直接用 sendType（sendType == 1 表示自己发的）
+            // - 群聊：sendType == 1 或 senderUin == currentUin
+            boolean isSelf = isGroupChat ? (isSelfBySendType || isSelfBySenderUin) : isSelfBySendType;
+            
+            // 【调试日志】输出判断详情
+            debugLog(TAG + ": [isSelf_CHECK] chatType=" + (isGroupChat ? "GROUP" : "PRIVATE") + 
+                    ", sendType=" + sendType + ", isSelfBySendType=" + isSelfBySendType + 
+                    ", senderUin=" + senderUinForDebug + ", currentUin=" + currentUinForDebug + 
+                    ", isSelfBySenderUin=" + isSelfBySenderUin + ", peerUin=" + peerUin + 
+                    ", FINAL_isSelf=" + isSelf);
 
             // Filter out unwanted message types
             int msgType = XposedHelpers.getIntField(msgRecord, "msgType");
@@ -1455,7 +1528,7 @@ public class MessageInterceptor {
                 }
             }
             
-            // 【关键修复】无条件清理旧选项条和好感度视图（RecyclerView的ViewHolder会复用）
+            // 无条件清理旧选项条和好感度视图（RecyclerView的ViewHolder会复用）
             // 使用View接收，避免ClassCastException（因为可能是LinearLayout也可能是TextView）
             View existingView = rootView.findViewById(OPTION_BAR_ID);
             if (existingView != null) {
@@ -1466,7 +1539,7 @@ public class MessageInterceptor {
                 }
             }
             
-            // 【关键修复】清理好感度视图 - 遍历所有可能的位置
+            // 清理好感度视图 - 遍历所有可能的位置
             // 好感度视图可能被添加到 rootView 或其子 ViewGroup 中
             removeAffinityViewRecursively(rootView);
             
@@ -1514,9 +1587,22 @@ public class MessageInterceptor {
                 debugLog(TAG + ": Failed to get msgId: " + t.getMessage());
             }
             
+            // 提前获取消息时间戳，用于历史消息判断
+            long msgTime = 0;
+            try {
+                Object msgTimeObj = XposedHelpers.getObjectField(msgRecord, "msgTime");
+                if (msgTimeObj != null) {
+                    // msgTime通常是秒，转换为毫秒
+                    msgTime = Long.parseLong(String.valueOf(msgTimeObj)) * 1000L;
+                }
+            } catch (Throwable t) {
+                // 失败则使用当前时间（降级）
+                msgTime = System.currentTimeMillis();
+                debugLog(TAG + ": Failed to get msgTime, using current time: " + t.getMessage());
+            }
+            
             // 保存消息到上下文缓存（带去重）
-            String peerUin = null; // 提升作用域
-            long msgTime = 0; // 【修复】提升作用域，供后续AI判断使用
+            // 注意：peerUin 已在前面获取，这里不需要重复定义
             try {
                 // 获取发送人昵称（优先使用备注名，其次QQ昵称）
                 String senderName = null;
@@ -1542,29 +1628,16 @@ public class MessageInterceptor {
                     senderName = senderUin != null ? senderUin : "未知";
                 }
                 
-                // 获取peerUin（会话ID）
-                try {
-                    Object peerUinObj = XposedHelpers.getObjectField(msgRecord, "peerUin");
-                    peerUin = String.valueOf(peerUinObj);
-                    debugLog(TAG + ": [Affinity] peerUin=" + peerUin + ", senderUin=" + senderUin);
-                } catch (Throwable t) {
-                    debugLog(TAG + ": Failed to get peerUin: " + t.getMessage());
-                }
+                // peerUin 已在前面获取，这里添加调试日志
+                debugLog(TAG + ": [Affinity] peerUin=" + peerUin + ", senderUin=" + senderUin);
 
                 // 使用peerUin作为conversationId（群聊时为群号，私聊时为对方QQ）
                 // 这样可以确保群聊中不同用户的消息被聚合到同一个上下文中
                 if (peerUin != null && !msgContent.isEmpty()) {
-                    // 获取消息时间戳
-                    try {
-                        Object msgTimeObj = XposedHelpers.getObjectField(msgRecord, "msgTime");
-                        if (msgTimeObj != null) {
-                            // msgTime通常是秒，转换为毫秒
-                            msgTime = Long.parseLong(String.valueOf(msgTimeObj)) * 1000L;
-                        }
-                    } catch (Throwable t) {
-                        // 失败则使用当前时间（降级）
-                        msgTime = System.currentTimeMillis();
-                    }
+                    
+                    // 【优化】仅在启用自动显示选项时才缓存消息到上下文管理器
+                    // 其他时候改为从本地消息记录获取上下文
+                    boolean shouldCacheMessage = ConfigManager.isAutoShowOptionsEnabled();
                     
                     // 【新增】提取引用回复的内容并整合到消息
                     try {
@@ -1676,23 +1749,28 @@ public class MessageInterceptor {
                         senderName = senderName + "[我]";
                     }
                     
-                    // 【上下文图片识别】传递图片数量，用于后续识别上下文中的图片
-                    int imageCount = (imageElements != null) ? imageElements.size() : 0;
-                    MessageContextManager.addMessage(peerUin, senderName, msgContent, isSelf, msgId, msgTime, imageCount);
-                    
-                    // 【上下文图片识别】缓存图片元素，以便后续识别
-                    if (imageElements != null && !imageElements.isEmpty() && peerUin != null && msgId != null) {
-                        top.galqq.utils.ImageDescriptionCache.putImageElements(peerUin, msgId, imageElements);
+                    // 【优化】仅在启用自动显示选项时才缓存消息
+                    if (shouldCacheMessage) {
+                        // 【上下文图片识别】传递图片数量，用于后续识别上下文中的图片
+                        int imageCount = (imageElements != null) ? imageElements.size() : 0;
+                        MessageContextManager.addMessage(peerUin, senderName, msgContent, isSelf, msgId, msgTime, imageCount);
+                        
+                        // 【上下文图片识别】缓存图片元素，以便后续识别
+                        if (imageElements != null && !imageElements.isEmpty() && peerUin != null && msgId != null) {
+                            top.galqq.utils.ImageDescriptionCache.putImageElements(peerUin, msgId, imageElements);
+                        }
+                        
+                        debugLog(TAG + ": [AUTO_SHOW] 已缓存消息到上下文管理器");
+                    } else {
+                        debugLog(TAG + ": [ON_DEMAND] 跳过消息缓存，将在需要时从本地记录获取");
                     }
                 }
             } catch (Throwable t) {
                 debugLog(TAG + ": Error saving message to context: " + t.getMessage());
             }
             
-            // 【只为对方消息创建选项栏和好感度视图，自己的消息不显示UI】
-            // 注意：好感度视图已在前面统一清理过了
             if (!isSelf) {
-                // 【好感度显示】如果启用，添加好感度视图
+                // 如果启用好感度功能，添加好感度视图
                 final String finalSenderUin = senderUin;
                 if (ConfigManager.isAffinityEnabled() && finalSenderUin != null && !finalSenderUin.isEmpty()) {
                     try {
@@ -1735,7 +1813,7 @@ public class MessageInterceptor {
                     }
                 }
                 
-                // 【关键修复】防止加载历史记录时触发AI刷屏
+                // 防止加载历史记录时触发AI刷屏
                 // 动态获取配置的阈值（秒转毫秒）
                 int thresholdSeconds = ConfigManager.getHistoryThreshold();
                 long thresholdMs = thresholdSeconds * 1000L;
@@ -1743,10 +1821,18 @@ public class MessageInterceptor {
                 // 检查是否已缓存AI选项（如果有缓存，即使超过阈值也显示）
                 boolean hasCachedOptions = (msgId != null && optionsCache.containsKey(msgId));
                 
+                // 历史消息判断：超过阈值的消息不显示任何UI（包括私聊）
                 long currentTime = System.currentTimeMillis();
-                if (!hasCachedOptions && Math.abs(currentTime - msgTime) > thresholdMs) {
-                    // debugLog(TAG + ": ⏳ Skipping option bar for old message without cache (diff=" + (currentTime - msgTime) + "ms)");
-                    return; 
+                long timeDiff = Math.abs(currentTime - msgTime);
+                boolean isHistoryMessage = (!hasCachedOptions && timeDiff > thresholdMs);
+                
+                debugLog(TAG + ": [HISTORY_CHECK] msgTime=" + msgTime + ", currentTime=" + currentTime + 
+                        ", diff=" + timeDiff + "ms, threshold=" + thresholdMs + "ms, hasCached=" + hasCachedOptions + 
+                        ", isHistory=" + isHistoryMessage);
+                
+                if (isHistoryMessage) {
+                    debugLog(TAG + ": [HISTORY] 历史消息，不显示任何UI (diff=" + timeDiff + "ms > threshold=" + thresholdMs + "ms)");
+                    return;
                 }
 
 
@@ -1756,7 +1842,7 @@ public class MessageInterceptor {
                 // 确保 conversationId 在作用域内
                 String conversationId = (peerUin != null && !peerUin.isEmpty()) ? peerUin : senderUin;
 
-                // 【群聊选项显示控制】在创建任何UI元素之前检查
+                // 群聊选项显示控制：仅对群聊进行过滤，私聊不受影响
                 // 判断是否为群聊：peerUin != senderUin 时为群聊
                 boolean isGroupChatForFilter = peerUin != null && senderUin != null && !peerUin.equals(senderUin);
                 if (isGroupChatForFilter) {
@@ -1771,6 +1857,8 @@ public class MessageInterceptor {
                         return; // 直接返回，不创建任何UI元素
                     }
                 }
+                // 【私聊】如果不是群聊，说明是私聊，继续显示选项
+                debugLog(TAG + ": [CHAT_TYPE] isGroupChat=" + isGroupChatForFilter + ", autoShow=" + autoShow);
 
                 // 检查是否用户手动点击过显示
                 boolean hasRequested = (msgId != null && requestedOptionsMsgIds.contains(msgId));
@@ -1780,50 +1868,44 @@ public class MessageInterceptor {
                 // 检查是否已收起（优先显示「展开选项」按钮）
                 boolean isCollapsed = (msgId != null && collapsedMsgIds.contains(msgId));
                 
+                // 【修改逻辑】根据是否启用自动显示来决定UI显示方式
+                View viewToAdd = null;
+                boolean needFillContent = false;
+                
                 if (isCollapsed && hasCache) {
                     // 已收起且有缓存：显示「展开选项」按钮
-                    View expandBtn = createExpandFromCacheButton(context, msgRecord, msgId, conversationId, rootView);
+                    debugLog(TAG + ": [UI_MODE] 显示「展开选项」按钮（已收起状态）");
+                    viewToAdd = createExpandFromCacheButton(context, msgRecord, msgId, conversationId, rootView);
                     
-                    Class<?> constraintLayoutClass = null;
-                    try {
-                        constraintLayoutClass = XposedHelpers.findClass("androidx.constraintlayout.widget.ConstraintLayout", context.getClassLoader());
-                    } catch (Throwable t) {
-                        // Ignore if class not found
-                    }
-
-                    if (constraintLayoutClass != null && constraintLayoutClass.isAssignableFrom(rootView.getClass())) {
-                        handleConstraintLayout(context, rootView, expandBtn, msgRecord);
-                    } else if (rootView.getClass().getName().contains("ConstraintLayout")) {
-                        handleConstraintLayout(context, rootView, expandBtn, msgRecord);
-                    } else {
-                        handleLegacyLayout(context, rootView, expandBtn);
-                    }
-                } else if (autoShow || hasRequested || hasCache) {
-                    // 自动显示模式：创建选项条并立即填充
+                } else if (isHistoryMessage) {
+                    // 【历史消息】始终只显示「显示选项」按钮，不自动加载AI
+                    debugLog(TAG + ": [UI_MODE] 历史消息，显示「显示选项」按钮");
+                    viewToAdd = createShowOptionsButton(context, msgRecord, msgId, conversationId, rootView);
+                    
+                } else if (autoShow) {
+                    // 【仅在启用自动显示时】自动创建选项条并填充
+                    debugLog(TAG + ": [UI_MODE] 自动显示选项（autoShow=true）");
                     LinearLayout optionBar = createEmptyOptionBarNT(context);
                     optionBar.setId(OPTION_BAR_ID);
+                    viewToAdd = optionBar;
+                    needFillContent = true;
                     
-                    Class<?> constraintLayoutClass = null;
-                    try {
-                        constraintLayoutClass = XposedHelpers.findClass("androidx.constraintlayout.widget.ConstraintLayout", context.getClassLoader());
-                    } catch (Throwable t) {
-                        // Ignore if class not found
-                    }
-
-                    if (constraintLayoutClass != null && constraintLayoutClass.isAssignableFrom(rootView.getClass())) {
-                        handleConstraintLayout(context, rootView, optionBar, msgRecord);
-                    } else if (rootView.getClass().getName().contains("ConstraintLayout")) {
-                        handleConstraintLayout(context, rootView, optionBar, msgRecord);
-                    } else {
-                        handleLegacyLayout(context, rootView, optionBar);
-                    }
+                } else if (hasRequested || hasCache) {
+                    // 【用户已点击显示或有缓存】显示选项条
+                    debugLog(TAG + ": [UI_MODE] 显示选项条（用户已请求或有缓存）");
+                    LinearLayout optionBar = createEmptyOptionBarNT(context);
+                    optionBar.setId(OPTION_BAR_ID);
+                    viewToAdd = optionBar;
+                    needFillContent = true;
                     
-                    // 使用带 rootView 的版本以支持操作按钮
-                    fillOptionBarContentWithRoot(context, optionBar, msgRecord, msgId, conversationId, rootView);
                 } else {
-                    // 按需显示模式：仅显示按钮
-                    View button = createShowOptionsButton(context, msgRecord, msgId, conversationId, rootView);
-                    
+                    // 【未启用自动显示且未请求】始终显示「显示选项」按钮
+                    debugLog(TAG + ": [UI_MODE] 显示「显示选项」按钮（按需模式）");
+                    viewToAdd = createShowOptionsButton(context, msgRecord, msgId, conversationId, rootView);
+                }
+                
+                // 统一处理布局添加
+                if (viewToAdd != null) {
                     Class<?> constraintLayoutClass = null;
                     try {
                         constraintLayoutClass = XposedHelpers.findClass("androidx.constraintlayout.widget.ConstraintLayout", context.getClassLoader());
@@ -1832,13 +1914,23 @@ public class MessageInterceptor {
                     }
 
                     if (constraintLayoutClass != null && constraintLayoutClass.isAssignableFrom(rootView.getClass())) {
-                        handleConstraintLayout(context, rootView, button, msgRecord);
+                        handleConstraintLayout(context, rootView, viewToAdd, msgRecord);
                     } else if (rootView.getClass().getName().contains("ConstraintLayout")) {
-                        handleConstraintLayout(context, rootView, button, msgRecord);
+                        handleConstraintLayout(context, rootView, viewToAdd, msgRecord);
                     } else {
-                        handleLegacyLayout(context, rootView, button);
+                        handleLegacyLayout(context, rootView, viewToAdd);
+                    }
+                    
+                    // 如果需要填充内容（选项条）
+                    if (needFillContent && viewToAdd instanceof LinearLayout) {
+                        fillOptionBarContentWithRoot(context, (LinearLayout) viewToAdd, msgRecord, msgId, conversationId, rootView);
                     }
                 }
+            } else {
+                // 【新增】即使是自己的消息，也需要检测并调整表情回复位置
+                // 避免表情回复和消息气泡重叠
+                debugLog(TAG + ": [EMOJI_REACTION_SELF] 检查自己消息的表情回复");
+                adjustEmojiReactionForSelfMessage(context, rootView, msgRecord);
             }
             
             // debugLog(TAG + ": Successfully added option bar to QQNT message");
@@ -2018,6 +2110,24 @@ public class MessageInterceptor {
 
     private static void handleConstraintLayout(Context context, ViewGroup rootView, View optionBar, Object msgRecord) {
         try {
+            // 确保 rootView 的高度是 WRAP_CONTENT，避免高度限制导致布局被压缩
+            ViewGroup.LayoutParams rootParams = rootView.getLayoutParams();
+            if (rootParams != null) {
+                int originalHeight = rootParams.height;
+                if (originalHeight != ViewGroup.LayoutParams.WRAP_CONTENT && originalHeight != ViewGroup.LayoutParams.MATCH_PARENT) {
+                    debugLog(TAG + ": [LAYOUT_FIX] rootView 高度为固定值: " + originalHeight + "px，可能导致布局问题");
+                }
+                // 注意：不要强制修改 rootView 的高度，这可能会破坏QQ的布局
+            }
+            
+            // 检测是否存在表情回复元素
+            int emojiReactionViewId = findEmojiReactionView(rootView);
+            boolean hasEmojiReaction = (emojiReactionViewId != -1);
+            
+            if (hasEmojiReaction) {
+                debugLog(TAG + ": [EMOJI_REACTION] 检测到表情回复，ID=" + emojiReactionViewId);
+            }
+            
             // 1. Add view to ConstraintLayout first (needed for ConstraintSet to work)
             // 判断是否是按钮（TextView），如果是则用WRAP_CONTENT，否则用MATCH_CONSTRAINT(0)
             boolean isButton = (optionBar instanceof TextView);
@@ -2086,18 +2196,96 @@ public class MessageInterceptor {
             }
             
             if (msgBubbleId != -1) {
+                // 将 msgBubbleId 声明为 final，以便在内部类中使用
+                final int finalMsgBubbleId = msgBubbleId;
+                
                 // Connect TOP of OptionBar to BOTTOM of MessageBubble
                 // connect(int startID, int startSide, int endID, int endSide, int margin)
                 // Sides: TOP=3, BOTTOM=4, LEFT=1, RIGHT=2, START=6, END=7
                 int TOP = 3, BOTTOM = 4, LEFT = 1, RIGHT = 2, START = 6, END = 7;
                 
+                // 计算 topMargin：如果有表情回复，根据表情数量增加额外的向下偏移
+                int topMargin = dp2px(context, 5); // 默认间距
+                
+                if (hasEmojiReaction) {
+                    final View emojiView = rootView.findViewById(emojiReactionViewId);
+                    
+                    if (emojiView != null && emojiView.getVisibility() == View.VISIBLE) {
+                        // 测量表情回复的高度
+                        int emojiHeight = emojiView.getHeight();
+                        if (emojiHeight == 0) {
+                            emojiView.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+                            emojiHeight = emojiView.getMeasuredHeight();
+                        }
+                        
+                        // 基础偏移：表情回复的基本高度
+                        topMargin = topMargin + emojiHeight + dp2px(context, 3);
+                        
+                        // 延迟到下一帧检查父容器高度（此时布局已完成）
+                        final int baseTopMargin = topMargin;
+                        final Object finalConstraintSet = constraintSet;
+                        
+                        emojiView.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    // 向上遍历多层容器，找到真正变化的那个
+                                    ViewParent current = emojiView.getParent();
+                                    int level = 1;
+                                    
+                                    while (current != null && current instanceof View && level <= 5) {
+                                        View currentView = (View) current;
+                                        int currentHeight = currentView.getHeight();
+                                        
+                                        debugLog(TAG + ": [EMOJI_REACTION] 延迟检测 - 第" + level + "层父容器: " + 
+                                                currentView.getClass().getSimpleName() + 
+                                                ", 高度=" + currentHeight + "px" +
+                                                ", ID=" + currentView.getId());
+                                        
+                                        // 检查这层容器是否高度超过阈值
+                                        int singleLineThreshold = dp2px(context, 30); // 约90px
+                                        
+                                        if (currentHeight > singleLineThreshold) {
+                                            int extraOffset = currentHeight - singleLineThreshold;
+                                            int newTopMargin = baseTopMargin + extraOffset;
+                                            
+                                            debugLog(TAG + ": [EMOJI_REACTION] 在第" + level + "层检测到多行表情，重新调整topMargin: " + 
+                                                    baseTopMargin + " + " + extraOffset + " = " + newTopMargin + "px");
+                                            
+                                            // 重新设置约束
+                                            XposedHelpers.callMethod(finalConstraintSet, "connect", 
+                                                OPTION_BAR_ID, TOP, finalMsgBubbleId, BOTTOM, newTopMargin);
+                                            XposedHelpers.callMethod(finalConstraintSet, "applyTo", rootView);
+                                            
+                                            return; // 找到变化的层级，退出
+                                        }
+                                        
+                                        current = current.getParent();
+                                        level++;
+                                    }
+                                    
+                                    debugLog(TAG + ": [EMOJI_REACTION] 所有层级都未检测到高度变化，可能是单行表情");
+                                    
+                                } catch (Throwable t) {
+                                    debugLog(TAG + ": [EMOJI_REACTION] 延迟检测失败: " + t.getMessage());
+                                }
+                            }
+                        });
+                        
+                        debugLog(TAG + ": [EMOJI_REACTION] ✓ 检测到表情回复，基础topMargin=" + topMargin + "px（将延迟检测多行）");
+                    }
+                }
+                
+                // 统一约束设置：始终连接到消息气泡，通过 topMargin 控制位置
                 XposedHelpers.callMethod(constraintSet, "connect", 
-                    OPTION_BAR_ID, TOP, msgBubbleId, BOTTOM, dp2px(context, 5));
+                    OPTION_BAR_ID, TOP, finalMsgBubbleId, BOTTOM, topMargin);
+                
+                debugLog(TAG + ": 选项气泡已连接到消息气泡，topMargin=" + topMargin + "px");
                 
                 // Align START (Left) of OptionBar to START (Left) of MessageBubble with 8dp margin
                 // 向左移动选项条
                 XposedHelpers.callMethod(constraintSet, "connect", 
-                    OPTION_BAR_ID, START, msgBubbleId, START, dp2px(context, 8)); // 8dp左边距
+                    OPTION_BAR_ID, START, finalMsgBubbleId, START, dp2px(context, 8)); // 8dp左边距
                 
                 // 仅对非按钮（即选项条）添加右侧约束，避免按钮被拉伸
                 if (!isButton) {
@@ -2106,9 +2294,54 @@ public class MessageInterceptor {
                         OPTION_BAR_ID, END, 0 /* PARENT_ID */, END, dp2px(context, 16)); // 16dp右边距
                 }
                 
+                // 确保消息气泡的约束不被影响，固定其顶部位置
+                try {
+                    // 保存消息气泡的原始顶部约束（如果有的话）
+                    // 这里不做修改，只是确保它保持原样
+                    debugLog(TAG + ": 保持消息气泡原始约束不变");
+                } catch (Throwable t) {
+                    debugLog(TAG + ": 检查消息气泡约束时出错: " + t.getMessage());
+                }
+                
                 // Apply constraints
                 XposedHelpers.callMethod(constraintSet, "applyTo", rootView);
-                // debugLog(TAG + ": Applied ConstraintSet layout with margins");
+                
+                // 【调试】等待布局完成后验证位置
+                if (hasEmojiReaction) {
+                    final View finalEmojiView = rootView.findViewById(emojiReactionViewId);
+                    final View finalOptionBar = rootView.findViewById(OPTION_BAR_ID);
+                    
+                    rootView.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                if (finalEmojiView != null && finalOptionBar != null) {
+                                    View msgBubble = rootView.findViewById(finalMsgBubbleId);
+                                    int emojiTop = finalEmojiView.getTop();
+                                    int emojiHeight = finalEmojiView.getHeight();
+                                    int optionTop = finalOptionBar.getTop();
+                                    int msgBubbleTop = (msgBubble != null) ? msgBubble.getTop() : -1;
+                                    int msgBubbleBottom = (msgBubble != null) ? msgBubble.getBottom() : -1;
+                                    
+                                    debugLog(TAG + ": [EMOJI_REACTION] 最终位置验证:");
+                                    debugLog(TAG + ": [EMOJI_REACTION] - 消息气泡: top=" + msgBubbleTop + "px, bottom=" + msgBubbleBottom + "px");
+                                    debugLog(TAG + ": [EMOJI_REACTION] - 表情回复: top=" + emojiTop + "px, height=" + emojiHeight + "px");
+                                    debugLog(TAG + ": [EMOJI_REACTION] - 选项气泡: top=" + optionTop + "px");
+                                    debugLog(TAG + ": [EMOJI_REACTION] - 预期选项气泡 top: " + (msgBubbleBottom + emojiHeight) + "px");
+                                    
+                                    int expectedTop = msgBubbleBottom + emojiHeight + dp2px(context, 3);
+                                    if (Math.abs(optionTop - expectedTop) > dp2px(context, 10)) {
+                                        debugLog(TAG + ": [EMOJI_REACTION] ⚠️ 位置偏差较大！实际=" + optionTop + "px, 预期=" + expectedTop + "px");
+                                    } else {
+                                        debugLog(TAG + ": [EMOJI_REACTION] ✓ 位置正确");
+                                    }
+                                }
+                            } catch (Throwable t) {
+                                debugLog(TAG + ": [EMOJI_REACTION] 位置验证失败: " + t.getMessage());
+                            }
+                        }
+                    });
+                }
             } else {
                 debugLog(TAG + ": Could not find message bubble ID for ConstraintLayout");
             }
@@ -2139,6 +2372,159 @@ public class MessageInterceptor {
             }
         }
         return null;
+    }
+    
+    /**
+     * 查找表情回复视图
+     * 表情回复通常在消息气泡下方，类名为 EmojiUpdateTextView 或包含 msgtail 等关键字
+     * 
+     * @param rootView 根视图
+     * @return 表情回复视图的ID，如果未找到返回-1
+     */
+    private static int findEmojiReactionView(ViewGroup rootView) {
+        try {
+            
+            // 遍历所有子视图，查找表情回复元素
+            for (int i = 0; i < rootView.getChildCount(); i++) {
+                View child = rootView.getChildAt(i);
+                String className = child.getClass().getName();
+                String classNameLower = className.toLowerCase();
+                String simpleName = child.getClass().getSimpleName().toLowerCase();
+                
+                // 【宽松匹配】只要包含特征关键词就可能是表情回复
+                boolean isReactionView = 
+                    // 精确匹配
+                    className.contains("EmojiUpdateTextView") ||
+                    className.contains("msgtail") ||
+                    // 包含 emoji 且不是输入框
+                    (classNameLower.contains("emoji") && !classNameLower.contains("input") && !classNameLower.contains("edit")) ||
+                    // 包含 reaction
+                    classNameLower.contains("reaction") ||
+                    // 包含 emoticon
+                    classNameLower.contains("emoticon") ||
+                    // 包含 face 且不是头像
+                    (classNameLower.contains("face") && !classNameLower.contains("avatar"));
+                
+                if (isReactionView && child.getId() != View.NO_ID && child.getVisibility() == View.VISIBLE) {
+                    return child.getId();
+                }
+                
+                // 递归检查子视图
+                if (child instanceof ViewGroup) {
+                    int foundId = findEmojiReactionViewRecursive((ViewGroup) child);
+                    if (foundId != -1) {
+                        return foundId;
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            debugLog(TAG + ": [EMOJI_REACTION] 查找表情回复视图失败: " + t.getMessage());
+        }
+        
+        return -1; // 未找到
+    }
+    
+    /**
+     * 递归查找表情回复视图
+     * 【改回模糊匹配】不使用精确类名，使用多种关键字组合判断
+     */
+    private static int findEmojiReactionViewRecursive(ViewGroup parent) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View child = parent.getChildAt(i);
+            String className = child.getClass().getName();
+            String classNameLower = className.toLowerCase();
+            String simpleName = child.getClass().getSimpleName().toLowerCase();
+            
+            // 【模糊匹配】使用多种关键字组合判断，不依赖精确类名
+            boolean isReactionView = 
+                // 匹配包含 emoji 相关的类名
+                (classNameLower.contains("emoji") && (classNameLower.contains("text") || classNameLower.contains("update") || classNameLower.contains("view"))) ||
+                // 匹配包含 reaction 的类名
+                classNameLower.contains("reaction") || 
+                // 匹配包含 emoticon 的类名
+                classNameLower.contains("emoticon") ||
+                // 匹配 msgtail + emoji 组合
+                (classNameLower.contains("msgtail") && classNameLower.contains("emoji")) ||
+                // 匹配 aio + reaction 组合
+                (classNameLower.contains("aio") && classNameLower.contains("reaction")) ||
+                // 匹配 msg + reaction 组合
+                (classNameLower.contains("msg") && classNameLower.contains("reaction")) ||
+                // 简单类名匹配
+                simpleName.contains("reaction") ||
+                simpleName.contains("emoji");
+            
+            if (isReactionView && child.getId() != View.NO_ID) {
+                // 检查视图是否可见（有些表情回复可能是隐藏的）
+                if (child.getVisibility() == View.VISIBLE) {
+                    debugLog(TAG + ": [EMOJI_REACTION] ✓ 模糊匹配找到表情回复: " + className);
+                    return child.getId();
+                }
+            }
+            
+            if (child instanceof ViewGroup) {
+                int foundId = findEmojiReactionViewRecursive((ViewGroup) child);
+                if (foundId != -1) {
+                    return foundId;
+                }
+            }
+        }
+        
+        return -1;
+    }
+    
+    /**
+     * 为自己发送的消息检测表情回复
+     * 【对齐handleConstraintLayout】使用相同的检测逻辑
+     * 自己的消息不显示选项气泡，表情回复保持在消息气泡下方的默认位置
+     * 
+     * @param context 上下文
+     * @param rootView 根视图
+     * @param msgRecord 消息记录
+     */
+    private static void adjustEmojiReactionForSelfMessage(Context context, ViewGroup rootView, Object msgRecord) {
+        try {
+            // 【对齐handleConstraintLayout】检测表情回复视图
+            int emojiReactionViewId = findEmojiReactionView(rootView);
+            boolean hasEmojiReaction = (emojiReactionViewId != -1);
+            
+            if (hasEmojiReaction) {
+                // 【对齐handleConstraintLayout】获取表情回复视图并测量
+                View emojiView = rootView.findViewById(emojiReactionViewId);
+                if (emojiView != null && emojiView.getVisibility() == View.VISIBLE) {
+                    // 【对齐handleConstraintLayout】强制布局和异步获取实际位置
+                    rootView.requestLayout();
+                    rootView.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                int emojiHeight = emojiView.getHeight();
+                                int emojiTop = emojiView.getTop();
+                                debugLog(TAG + ": [EMOJI_REACTION_SELF] 表情回复实际位置: top=" + emojiTop + "px, height=" + emojiHeight + "px");
+                            } catch (Throwable t) {
+                                debugLog(TAG + ": [EMOJI_REACTION_SELF] 获取表情回复位置失败: " + t.getMessage());
+                            }
+                        }
+                    });
+                    
+                    // 【对齐handleConstraintLayout】测量表情回复视图的高度
+                    int emojiHeight = emojiView.getHeight();
+                    if (emojiHeight == 0) {
+                        // 如果还没有布局，强制测量
+                        emojiView.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+                        emojiHeight = emojiView.getMeasuredHeight();
+                    }
+                    
+                    debugLog(TAG + ": [EMOJI_REACTION_SELF] 自己的消息检测到表情回复，ID=" + emojiReactionViewId + 
+                            ", 高度=" + emojiHeight + "px，保持默认位置（消息气泡下方）");
+                } else {
+                    debugLog(TAG + ": [EMOJI_REACTION_SELF] 表情回复视图不可见或为空");
+                }
+            } else {
+                debugLog(TAG + ": [EMOJI_REACTION_SELF] 未检测到表情回复");
+            }
+        } catch (Throwable t) {
+            debugLog(TAG + ": [EMOJI_REACTION_SELF] 检测失败: " + t.getMessage());
+        }
     }
     
     // 创建空的选项条（稍后填充内容）
@@ -2691,7 +3077,7 @@ public class MessageInterceptor {
         return isRecyclerView(clazz.getSuperclass());
     }
 
-    // 【DEBUG】Hook AIO消息发送相关类的所有方法以分析调用流程
+    // Hook AIO消息发送相关类的所有方法以分析调用流程
     private static void hookDebugAIOSendMsgVMDelegate(ClassLoader classLoader) {
         String[] targetClasses = {
             // 尝试两个可能的包路径

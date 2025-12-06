@@ -76,6 +76,24 @@
         <item>SOCKS</item>
     </string-array>
     
+    <!-- Reasoning Effort 思考模式选项 -->
+    <string-array name="reasoning_effort_names">
+        <item>关闭</item>
+        <item>minimal - 最小思考</item>
+        <item>none - 无思考</item>
+        <item>low - 低强度</item>
+        <item>medium - 中等强度</item>
+        <item>high - 高强度</item>
+    </string-array>
+    <string-array name="reasoning_effort_values">
+        <item>off</item>
+        <item>minimal</item>
+        <item>none</item>
+        <item>low</item>
+        <item>medium</item>
+        <item>high</item>
+    </string-array>
+    
     <!-- 外挂AI服务商选项 (图片识别) -->
     <string-array name="vision_ai_provider_names">
         <item>OpenAI (GPT-4 Vision)</item>

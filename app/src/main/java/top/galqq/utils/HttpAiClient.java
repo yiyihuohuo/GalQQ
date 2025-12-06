@@ -978,6 +978,13 @@ public class HttpAiClient {
             if (maxTokens > 0 && maxTokens <= 4096) {
                 jsonBody.put("max_tokens", maxTokens);
             }
+            
+            // 添加 reasoning_effort 参数（如果启用）
+            if (ConfigManager.isReasoningEffortEnabled()) {
+                String reasoningEffort = ConfigManager.getAiReasoningEffort();
+                jsonBody.put("reasoning_effort", reasoningEffort);
+                Log.d(TAG, "启用思考模式: reasoning_effort=" + reasoningEffort);
+            }
 
             JSONArray messages = new JSONArray();
             

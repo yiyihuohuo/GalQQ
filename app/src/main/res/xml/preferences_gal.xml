@@ -58,6 +58,14 @@
             android:summary="@string/gal_ai_max_tokens_summary"
             android:inputType="number"
             android:defaultValue="120" />
+        
+        <ListPreference
+            android:key="gal_ai_reasoning_effort"
+            android:title="思考模式 (reasoning_effort)"
+            android:summary="并不是所有模型都支持此参数，可以选择关闭"
+            android:entries="@array/reasoning_effort_names"
+            android:entryValues="@array/reasoning_effort_values"
+            android:defaultValue="off" />
             
         <EditTextPreference
             android:key="gal_ai_qps"

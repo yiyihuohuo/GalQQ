@@ -24,6 +24,36 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
         }
         pref.setSummary(displayName + "\n" + apiUrl);
     }
+    
+    /**
+     * 更新Reasoning Effort的summary显示
+     */
+    private void updateReasoningEffortSummary(androidx.preference.ListPreference pref, String effort) {
+        String displayText;
+        switch (effort) {
+            case "off":
+                displayText = "已关闭";
+                break;
+            case "minimal":
+                displayText = "minimal - 最小思考";
+                break;
+            case "none":
+                displayText = "none - 无思考";
+                break;
+            case "low":
+                displayText = "low - 低强度";
+                break;
+            case "medium":
+                displayText = "medium - 中等强度";
+                break;
+            case "high":
+                displayText = "high - 高强度";
+                break;
+            default:
+                displayText = effort;
+        }
+        pref.setSummary("当前: " + displayText + "\n并不是所有模型都支持此参数，可以选择关闭");
+    }
 
     /**
      * 更新提示词管理的summary显示
@@ -217,6 +247,20 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
                     }
                 } catch (Exception e) {}
                 return false;
+            });
+        }
+        
+        // AI Reasoning Effort (思考模式)
+        androidx.preference.ListPreference reasoningEffortPref = findPreference(ConfigManager.KEY_AI_REASONING_EFFORT);
+        if (reasoningEffortPref != null) {
+            String currentEffort = ConfigManager.getAiReasoningEffort();
+            reasoningEffortPref.setValue(currentEffort);
+            updateReasoningEffortSummary(reasoningEffortPref, currentEffort);
+            reasoningEffortPref.setOnPreferenceChangeListener((preference, newValue) -> {
+                String effort = (String) newValue;
+                ConfigManager.setAiReasoningEffort(effort);
+                updateReasoningEffortSummary(reasoningEffortPref, effort);
+                return true;
             });
         }
         

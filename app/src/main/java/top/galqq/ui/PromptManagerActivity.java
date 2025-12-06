@@ -99,11 +99,21 @@ public class PromptManagerActivity extends AppCompatTransferActivity {
             "• 点击切换：点击提示词可启用/禁用\n" +
             "• 黑白名单：支持用户级和群级的精细控制\n" +
             "• 提示词内容：支持分区编辑（内容/输入格式/输出格式）";
-        
         new AlertDialog.Builder(this)
             .setTitle("提示词配置说明")
             .setMessage(helpContent)
             .setPositiveButton("知道了", null)
+            .setNeutralButton("浏览提示词分享", (dialog, which) -> {
+                try {
+                    android.content.Intent intent = new android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://blog.h-acker.cn/forum/3428.html")
+                    );
+                    startActivity(intent);
+                } catch (Exception e) {
+                    Toast.makeText(this, "无法打开浏览器", Toast.LENGTH_SHORT).show();
+                }
+            })
             .show();
     }
     

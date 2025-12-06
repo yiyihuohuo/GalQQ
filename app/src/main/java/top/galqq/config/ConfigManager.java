@@ -24,6 +24,7 @@ public class ConfigManager {
     public static final String KEY_AI_PROVIDER = "gal_ai_provider";
     public static final String KEY_AI_TEMPERATURE = "gal_ai_temperature";
     public static final String KEY_AI_MAX_TOKENS = "gal_ai_max_tokens";
+    public static final String KEY_AI_REASONING_EFFORT = "gal_ai_reasoning_effort";
     public static final String KEY_DICT_PATH = "gal_dict_path";
     public static final String KEY_FILTER_MODE = "gal_filter_mode";
     public static final String KEY_WHITELIST = "gal_whitelist";
@@ -547,6 +548,31 @@ public class ConfigManager {
     
     public static void setAiMaxTokens(int maxTokens) {
         getMmkv().encode(KEY_AI_MAX_TOKENS, maxTokens);
+    }
+
+    /**
+     * 获取AI推理强度 (reasoning_effort)
+     * @return "off", "none", "low", "medium", "high"
+     */
+    public static String getAiReasoningEffort() {
+        return getMmkv().decodeString(KEY_AI_REASONING_EFFORT, "off");
+    }
+    
+    /**
+     * 设置AI推理强度
+     * @param effort "off", "none", "low", "medium", "high"
+     */
+    public static void setAiReasoningEffort(String effort) {
+        getMmkv().encode(KEY_AI_REASONING_EFFORT, effort);
+    }
+    
+    /**
+     * 检查是否启用了reasoning_effort参数
+     * @return true 如果不是 "off"
+     */
+    public static boolean isReasoningEffortEnabled() {
+        String effort = getAiReasoningEffort();
+        return effort != null && !effort.equals("off");
     }
 
     public static float getAiQps() {

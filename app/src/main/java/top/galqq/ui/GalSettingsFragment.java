@@ -281,6 +281,31 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
             });
         }
         
+        // AI Timeout (请求超时时间)
+        EditTextPreference aiTimeoutPref = findPreference(ConfigManager.KEY_AI_TIMEOUT);
+        if (aiTimeoutPref != null) {
+            aiTimeoutPref.setText(String.valueOf(ConfigManager.getAiTimeout()));
+            aiTimeoutPref.setSummary("当前: " + ConfigManager.getAiTimeout() + " 秒 (读取超时: " + (ConfigManager.getAiTimeout() * 2) + " 秒)");
+            aiTimeoutPref.setOnPreferenceChangeListener((preference, newValue) -> {
+                try {
+                    int timeout = Integer.parseInt((String) newValue);
+                    if (timeout >= 1 && timeout <= 600) {
+                        ConfigManager.setAiTimeout(timeout);
+                        aiTimeoutPref.setText((String) newValue);
+                        aiTimeoutPref.setSummary("当前: " + timeout + " 秒 (读取超时: " + (timeout * 2) + " 秒)");
+                        // 重置AI客户端以使用新的超时配置
+                        top.galqq.utils.HttpAiClient.resetClient();
+                        return true;
+                    } else {
+                        android.widget.Toast.makeText(requireContext(), "超时时间范围: 1-600秒", android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception e) {
+                    android.widget.Toast.makeText(requireContext(), "请输入有效的超时时间", android.widget.Toast.LENGTH_SHORT).show();
+                }
+                return false;
+            });
+        }
+        
         // Context Enabled (启用对话上下文)
         Preference contextEnabledSwitch = findPreference(ConfigManager.KEY_CONTEXT_ENABLED);
         if (contextEnabledSwitch != null) {

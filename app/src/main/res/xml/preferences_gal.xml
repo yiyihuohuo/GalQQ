@@ -74,6 +74,13 @@
             android:inputType="numberDecimal"
             android:defaultValue="3.0" />
         
+        <EditTextPreference
+            android:key="gal_ai_timeout"
+            android:title="请求超时时间"
+            android:summary="AI API请求超时时间（秒），默认30秒，读取超时为2倍"
+            android:inputType="number"
+            android:defaultValue="30" />
+        
         <Preference
             android:key="gal_test_api"
             android:title="@string/gal_test_api_title"

@@ -131,6 +131,10 @@ public class ConfigManager {
     public static final float DEFAULT_AI_QPS = 3.0f;
     public static final String KEY_AI_QPS = "gal_ai_qps";
     
+    // AI Timeout Default Value (主AI超时时间)
+    public static final int DEFAULT_AI_TIMEOUT = 30; // 默认30秒
+    public static final String KEY_AI_TIMEOUT = "gal_ai_timeout";
+    
     // Proxy Keys (代理配置)
     public static final String KEY_PROXY_ENABLED = "gal_proxy_enabled";
     public static final String KEY_PROXY_TYPE = "gal_proxy_type";
@@ -581,6 +585,22 @@ public class ConfigManager {
     
     public static void setAiQps(float qps) {
         getMmkv().encode(KEY_AI_QPS, qps);
+    }
+    
+    /**
+     * 获取主AI请求超时时间（秒）
+     * @return 超时时间
+     */
+    public static int getAiTimeout() {
+        return getMmkv().decodeInt(KEY_AI_TIMEOUT, DEFAULT_AI_TIMEOUT);
+    }
+    
+    /**
+     * 设置主AI请求超时时间（秒）
+     * @param timeout 超时时间
+     */
+    public static void setAiTimeout(int timeout) {
+        getMmkv().encode(KEY_AI_TIMEOUT, timeout);
     }
 
     public static String getDictPath() {

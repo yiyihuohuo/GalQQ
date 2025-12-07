@@ -41,6 +41,7 @@ public class HttpAiClient {
     private static OkHttpClient client;
     private static OkHttpClient clientWithProxy;
     private static String lastProxyConfig = ""; // 用于检测代理配置变化
+    private static int lastTimeout = 0; // 用于检测超时配置变化
     private static Handler mainHandler = new Handler(Looper.getMainLooper());
 
     /**
@@ -53,13 +54,24 @@ public class HttpAiClient {
             return getClientWithProxy();
         }
         
+        // 获取配置的超时时间
+        int timeout = ConfigManager.getAiTimeout();
+        
+        // 检查超时配置是否变化，需要重建客户端
+        if (client != null && timeout != lastTimeout) {
+            Log.d(TAG, "AI超时配置变化，重建客户端: " + lastTimeout + "s -> " + timeout + "s");
+            client = null;
+        }
+        
         // 不使用代理的客户端
         if (client == null) {
             client = new OkHttpClient.Builder()
-                    .connectTimeout(10, TimeUnit.SECONDS)
-                    .readTimeout(15, TimeUnit.SECONDS)
-                    .writeTimeout(10, TimeUnit.SECONDS)
+                    .connectTimeout(timeout, TimeUnit.SECONDS)
+                    .readTimeout(timeout * 2, TimeUnit.SECONDS)  // 读取超时设为2倍，给AI足够的响应时间
+                    .writeTimeout(timeout, TimeUnit.SECONDS)
                     .build();
+            lastTimeout = timeout;
+            Log.d(TAG, "创建AI客户端，超时配置: connect=" + timeout + "s, read=" + (timeout * 2) + "s, write=" + timeout + "s");
         }
         return client;
     }
@@ -69,7 +81,7 @@ public class HttpAiClient {
      * 支持 HTTP 和 SOCKS 代理，以及用户名密码认证
      */
     private static synchronized OkHttpClient getClientWithProxy() {
-        // 构建当前代理配置的唯一标识
+        // 构建当前代理配置的唯一标识（包含超时配置）
         String currentProxyConfig = buildProxyConfigKey();
         
         // 如果代理配置没有变化，复用现有客户端
@@ -81,18 +93,20 @@ public class HttpAiClient {
         String proxyType = ConfigManager.getProxyType();
         String proxyHost = ConfigManager.getProxyHost();
         int proxyPort = ConfigManager.getProxyPort();
+        int timeout = ConfigManager.getAiTimeout();
         
-        Log.d(TAG, "创建代理客户端: " + proxyType + "://" + proxyHost + ":" + proxyPort);
+        Log.d(TAG, "创建代理客户端: " + proxyType + "://" + proxyHost + ":" + proxyPort + ", 超时: " + timeout + "s");
         
         // 创建代理对象
         Proxy.Type type = "SOCKS".equalsIgnoreCase(proxyType) ? Proxy.Type.SOCKS : Proxy.Type.HTTP;
         Proxy proxy = new Proxy(type, new InetSocketAddress(proxyHost, proxyPort));
         
+        // 代理模式下连接超时增加5秒余量
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .proxy(proxy)
-                .connectTimeout(15, TimeUnit.SECONDS)  // 代理可能需要更长时间
-                .readTimeout(20, TimeUnit.SECONDS)
-                .writeTimeout(15, TimeUnit.SECONDS);
+                .connectTimeout(timeout + 5, TimeUnit.SECONDS)  // 代理可能需要更长时间
+                .readTimeout(timeout * 2 + 10, TimeUnit.SECONDS)
+                .writeTimeout(timeout + 5, TimeUnit.SECONDS);
         
         // 如果启用了代理认证
         if (ConfigManager.isProxyAuthEnabled()) {
@@ -123,13 +137,15 @@ public class HttpAiClient {
     
     /**
      * 构建代理配置的唯一标识，用于检测配置变化
+     * 包含超时配置，确保超时变化时也会重建客户端
      */
     private static String buildProxyConfigKey() {
         return ConfigManager.getProxyType() + "://" +
                ConfigManager.getProxyHost() + ":" +
                ConfigManager.getProxyPort() + "@" +
                ConfigManager.isProxyAuthEnabled() + ":" +
-               ConfigManager.getProxyUsername();
+               ConfigManager.getProxyUsername() + ":" +
+               ConfigManager.getAiTimeout();
     }
     
     /**
@@ -139,6 +155,17 @@ public class HttpAiClient {
         clientWithProxy = null;
         lastProxyConfig = "";
         Log.d(TAG, "代理客户端已重置");
+    }
+    
+    /**
+     * 重置AI客户端（超时配置变化时调用）
+     */
+    public static synchronized void resetClient() {
+        client = null;
+        clientWithProxy = null;
+        lastTimeout = 0;
+        lastProxyConfig = "";
+        Log.d(TAG, "AI客户端已重置");
     }
     
     /**

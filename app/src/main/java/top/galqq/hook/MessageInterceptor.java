@@ -420,12 +420,10 @@ public class MessageInterceptor {
                         contextMessages = contextMessages.subList(contextMessages.size() - contextCount, contextMessages.size());
                     }
                 } else {
-                    // 未启用自动显示时，从本地消息记录获取
-                    debugLog(TAG + ": [ON_DEMAND] 从本地消息记录获取上下文");
+                    // 未启用自动显示时，从内存缓存获取（如果有的话）
+                    debugLog(TAG + ": [ON_DEMAND] 从内存缓存获取上下文");
                     try {
-                        Context ctx = bar.getContext();
-                        contextMessages = top.galqq.utils.LocalMessageHelper.getLocalMessages(
-                            ctx, conversationId, contextCount + 1, msgId);
+                        contextMessages = MessageContextManager.getContext(conversationId, contextCount + 1);
                         
                         // 去除当前消息（如果获取到了）
                         if (!contextMessages.isEmpty()) {
@@ -1635,9 +1633,9 @@ public class MessageInterceptor {
                 // 这样可以确保群聊中不同用户的消息被聚合到同一个上下文中
                 if (peerUin != null && !msgContent.isEmpty()) {
                     
-                    // 【优化】仅在启用自动显示选项时才缓存消息到上下文管理器
-                    // 其他时候改为从本地消息记录获取上下文
-                    boolean shouldCacheMessage = ConfigManager.isAutoShowOptionsEnabled();
+                    // 【修改】总是缓存消息到上下文管理器，以便在按需显示时也能使用缓存
+                    // 这样无论是自动显示还是按需显示模式，都能从内存缓存中快速获取上下文
+                    boolean shouldCacheMessage = true;
                     
                     // 【新增】提取引用回复的内容并整合到消息
                     try {
@@ -1749,7 +1747,7 @@ public class MessageInterceptor {
                         senderName = senderName + "[我]";
                     }
                     
-                    // 【优化】仅在启用自动显示选项时才缓存消息
+                    // 【修改】总是缓存消息，无论是自动显示还是按需显示模式
                     if (shouldCacheMessage) {
                         // 【上下文图片识别】传递图片数量，用于后续识别上下文中的图片
                         int imageCount = (imageElements != null) ? imageElements.size() : 0;
@@ -1760,9 +1758,7 @@ public class MessageInterceptor {
                             top.galqq.utils.ImageDescriptionCache.putImageElements(peerUin, msgId, imageElements);
                         }
                         
-                        debugLog(TAG + ": [AUTO_SHOW] 已缓存消息到上下文管理器");
-                    } else {
-                        debugLog(TAG + ": [ON_DEMAND] 跳过消息缓存，将在需要时从本地记录获取");
+                        debugLog(TAG + ": 已缓存消息到上下文管理器（支持自动显示和按需显示）");
                     }
                 }
             } catch (Throwable t) {
@@ -1980,38 +1976,30 @@ public class MessageInterceptor {
      */
     private static void addAffinityViewToLayout(Context context, ViewGroup rootView, View affinityView, Object msgRecord, boolean isPrivateChat) {
         try {
-            // 1. 添加视图到 ConstraintLayout（与选项条相同）
+            // 1. 创建 ConstraintLayout.LayoutParams
             Class<?> constraintLayoutParamsClass = XposedHelpers.findClass(
                 "androidx.constraintlayout.widget.ConstraintLayout$LayoutParams", 
                 context.getClassLoader()
             );
-            ViewGroup.LayoutParams clp = (ViewGroup.LayoutParams) constraintLayoutParamsClass
+            Object clp = constraintLayoutParamsClass
                 .getConstructor(int.class, int.class)
                 .newInstance(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             
-            rootView.addView(affinityView, clp);
-            
-            // 2. 使用 ConstraintSet 定位（与选项条相同）
-            Class<?> constraintSetClass = XposedHelpers.findClass(
-                "androidx.constraintlayout.widget.ConstraintSet", 
-                context.getClassLoader()
-            );
-            Object constraintSet = constraintSetClass.newInstance();
-            XposedHelpers.callMethod(constraintSet, "clone", rootView);
-            
-            // 3. 查找消息气泡（与选项条使用完全相同的逻辑）
+            // 2. 查找消息气泡（与选项条使用完全相同的逻辑）
             int msgBubbleId = -1;
             
-            // 3.1 BubbleLayout Class Name Search (Priority)
+            // 2.1 BubbleLayout Class Name Search (Priority)
             for (int i = 0; i < rootView.getChildCount(); i++) {
                 View child = rootView.getChildAt(i);
                 if (child.getClass().getName().contains("BubbleLayout") && child.getId() != View.NO_ID) {
                     msgBubbleId = child.getId();
+                    debugLog(TAG + ": [Affinity] 找到气泡 via BubbleLayout: " + child.getClass().getSimpleName() + 
+                            ", ID=" + msgBubbleId + ", Top=" + child.getTop() + ", Height=" + child.getHeight());
                     break;
                 }
             }
             
-            // 3.2 Text Content Search (Fallback)
+            // 2.2 Text Content Search (Fallback)
             if (msgBubbleId == -1) {
                 String msgContent = getMessageContentNT(msgRecord);
                 if (!msgContent.isEmpty()) {
@@ -2024,12 +2012,14 @@ public class MessageInterceptor {
                         
                         if (bubble.getParent() == rootView && bubble.getId() != View.NO_ID) {
                             msgBubbleId = bubble.getId();
+                            debugLog(TAG + ": [Affinity] 找到气泡 via TextContent: " + bubble.getClass().getSimpleName() + 
+                                    ", ID=" + msgBubbleId + ", Top=" + bubble.getTop() + ", Height=" + bubble.getHeight());
                         }
                     }
                 }
             }
             
-            // 3.3 LinearLayout Fallback (Last Resort)
+            // 2.3 LinearLayout Fallback (Last Resort)
             if (msgBubbleId == -1) {
                 for (int i = 0; i < rootView.getChildCount(); i++) {
                     View child = rootView.getChildAt(i);
@@ -2040,32 +2030,44 @@ public class MessageInterceptor {
                 }
             }
             
-            // 4. 如果找不到气泡，不添加好感度视图（不降级）
+            // 3. 如果找不到气泡，不添加好感度视图
             if (msgBubbleId == -1) {
-                // 移除已添加的视图
-                rootView.removeView(affinityView);
                 debugLog(TAG + ": [Affinity] Could not find message bubble, skipping affinity view");
                 return;
             }
             
-            // 5. 设置约束（定位到气泡上方，左侧对齐父容器）
-            int viewId = affinityView.getId();
-            int parentId = 0; // ConstraintLayout.LayoutParams.PARENT_ID = 0
-            // 约束常量: TOP=3, BOTTOM=4, LEFT=1, RIGHT=2, START=6, END=7
+            // 4. 添加视图到布局
+            rootView.addView(affinityView, (ViewGroup.LayoutParams) clp);
+            
+            // 5. 使用 ConstraintSet 设置约束（与选项条一样的方式）
+            Class<?> constraintSetClass = XposedHelpers.findClass(
+                "androidx.constraintlayout.widget.ConstraintSet", 
+                context.getClassLoader()
+            );
+            Object constraintSet = constraintSetClass.newInstance();
+            XposedHelpers.callMethod(constraintSet, "clone", rootView);
+            
+            // 约束常量: TOP=3, BOTTOM=4, LEFT=1
             int TOP = 3, BOTTOM = 4, LEFT = 1;
+            int PARENT_ID = 0;
+            int viewId = affinityView.getId();
             
             // 【私聊/群聊位置调整】
-            // 群聊时：气泡上方有昵称，需要更大的间距（8dp）
-            // 私聊时：气泡上方没有昵称，使用负间距让好感度更靠近气泡（-4dp）
+            // 群聊：气泡上方有昵称，需要8dp间距
+            // 私聊：气泡上方没有昵称，直接使用8dp（和群聊一样，因为群聊正常）
             int bottomMargin = isPrivateChat ? dp2px(context, -16) : dp2px(context, 8);
+            
+            debugLog(TAG + ": [Affinity] isPrivateChat=" + isPrivateChat + ", bottomMargin=" + bottomMargin + "px, msgBubbleId=" + msgBubbleId);
             
             // 底部连接到气泡顶部
             XposedHelpers.callMethod(constraintSet, "connect", viewId, BOTTOM, msgBubbleId, TOP, bottomMargin);
-            // 左侧对齐父容器左边，留4dp间距（显示在头像上方位置）
-            XposedHelpers.callMethod(constraintSet, "connect", viewId, LEFT, parentId, LEFT, dp2px(context, 4));
+            // 左侧对齐父容器左边
+            XposedHelpers.callMethod(constraintSet, "connect", viewId, LEFT, PARENT_ID, LEFT, dp2px(context, 4));
             
-            // 6. 应用约束
+            // 应用约束
             XposedHelpers.callMethod(constraintSet, "applyTo", rootView);
+            
+            debugLog(TAG + ": [Affinity] 好感度视图已添加，使用 ConstraintSet 方式");
             
         } catch (Throwable t) {
             debugLog(TAG + ": [Affinity] Error adding affinity view: " + t.getMessage());
@@ -2252,10 +2254,23 @@ public class MessageInterceptor {
                                             debugLog(TAG + ": [EMOJI_REACTION] 在第" + level + "层检测到多行表情，重新调整topMargin: " + 
                                                     baseTopMargin + " + " + extraOffset + " = " + newTopMargin + "px");
                                             
-                                            // 重新设置约束
-                                            XposedHelpers.callMethod(finalConstraintSet, "connect", 
-                                                OPTION_BAR_ID, TOP, finalMsgBubbleId, BOTTOM, newTopMargin);
-                                            XposedHelpers.callMethod(finalConstraintSet, "applyTo", rootView);
+                                            // 【修复】直接修改选项气泡的 LayoutParams，不使用 ConstraintSet.applyTo()
+                                            // 这样不会影响好感度视图的约束
+                                            View optionBarView = rootView.findViewById(OPTION_BAR_ID);
+                                            if (optionBarView != null) {
+                                                ViewGroup.LayoutParams lp = optionBarView.getLayoutParams();
+                                                if (lp != null) {
+                                                    try {
+                                                        // 直接修改 topMargin
+                                                        XposedHelpers.setIntField(lp, "topMargin", newTopMargin);
+                                                        optionBarView.setLayoutParams(lp);
+                                                        optionBarView.requestLayout();
+                                                        debugLog(TAG + ": [EMOJI_REACTION] ✓ 已直接更新选项气泡的 topMargin");
+                                                    } catch (Throwable t2) {
+                                                        debugLog(TAG + ": [EMOJI_REACTION] ✗ 直接更新失败: " + t2.getMessage());
+                                                    }
+                                                }
+                                            }
                                             
                                             return; // 找到变化的层级，退出
                                         }

@@ -39,7 +39,7 @@ public class ModuleInfoActivity extends AppCompatTransferActivity {
         
         // 设置版本信息（与配置界面保持一致）
         TextView tvVersion = findViewById(R.id.tvVersion);
-        tvVersion.setText("版本 1.0.6 Alpha");
+        tvVersion.setText("版本 1.0.7 Alpha");
         
         // 设置按钮点击事件
         MaterialButton btnJoinGroup = findViewById(R.id.btnJoinGroup);

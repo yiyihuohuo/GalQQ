@@ -446,7 +446,7 @@
         <Preference
             android:key="gal_version"
             android:title="版本号"
-            android:summary="1.0.6 Alpha" />
+            android:summary="1.0.7 Alpha" />
             
         <Preference
             android:key="gal_developer"

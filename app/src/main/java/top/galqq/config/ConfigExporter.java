@@ -27,7 +27,7 @@ public class ConfigExporter {
     public static final int CURRENT_SCHEMA_VERSION = 1;
     
     // 应用版本
-    public static final String APP_VERSION = "1.0.6";
+    public static final String APP_VERSION = "1.0.7";
     
     /**
      * 获取所有配置项（按分类组织）

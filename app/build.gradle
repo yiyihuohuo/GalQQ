@@ -10,8 +10,8 @@ android {
         applicationId "top.galqq"
         minSdk 26
         targetSdk 34
-        versionCode 106
-        versionName "1.0.6"
+        versionCode 107
+        versionName "1.0.7"
         
         // 修复 INSTALL_FAILED_NO_MATCHING_ABIS 错误
         // 指定支持的 CPU 架构

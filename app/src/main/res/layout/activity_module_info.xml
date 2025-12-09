@@ -47,7 +47,7 @@
                     android:id="@+id/tvVersion"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="版本 1.0.6 Alpha"
+                    android:text="版本 1.0.7 Alpha"
                     android:textSize="14sp"
                     android:textColor="?android:attr/textColorSecondary" />
 

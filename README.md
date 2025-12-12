@@ -49,7 +49,7 @@ GalQQ 是一个基于 Xposed 框架的 Android 模块，旨在为 QQ 聊天界�
    - 打开 QQ 设置中的 GalQQ 选项
    - 配置 AI API 设置（可选）
    - 启用所需功能
-
+###  遇到问题请先查看我们的 [快速入门指南](docs/brief-guied.md)。
 ## 📖 使用说明
 
 ### 基本使用

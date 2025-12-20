@@ -32,7 +32,7 @@ GalQQ 是一个基于 Xposed 框架的 Android 模块，旨在为 QQ 聊天界�
 ### 环境要求
 - Android 7.0+ (API 24+)
 - LSPosed 框架（推荐）或 EdXposed
-- QQ 8.0+ 版本
+- QQ 9.0+ 版本
 
 ### 安装步骤
 

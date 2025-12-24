@@ -161,7 +161,8 @@ chore: 构建/工具相关
 
 ### 问题反馈
 - 提交 [Issue](https://github.com/yiyihuohuo/GalQQ/issues)
-- 加入 QQ 群： 859142525
+- 加入 QQ 群：859142525
+-加入Telegram频道：https://t.me/GalQQ_Channel
 - 项目地址：https://github.com/yiyihuohuo/GalQQ
 
 ### 贡献者
